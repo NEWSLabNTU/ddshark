@@ -1,29 +1,23 @@
 mod dds;
 mod opts;
 mod qos;
+mod ui;
 mod utils;
 
+use crate::opts::Opts;
 use anyhow::Result;
 use clap::Parser;
-use cyclors as cy;
-use futures::StreamExt;
-use opts::Opts;
-use std::ptr;
+use std::time::Duration;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let opts = Opts::parse();
     let domain_id = opts.domain_id.unwrap_or_else(opts::default_domain);
 
     let (tx, rx) = flume::bounded(4);
-    let dp = unsafe { cy::dds_create_participant(domain_id, ptr::null(), ptr::null()) };
-    dds::run_discovery(dp, tx);
+    dds::run_discovery(domain_id, tx);
 
-    rx.into_stream()
-        .for_each(|msg| async {
-            dbg!(msg);
-        })
-        .await;
+    let tick_rate = Duration::from_millis(250);
+    ui::run_tui(tick_rate, rx)?;
 
     Ok(())
 }

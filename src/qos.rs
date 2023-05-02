@@ -296,13 +296,13 @@ impl Qos {
                     vptr.push(cs.as_ptr());
                     vcs.push(cs);
                 }
-                let (ptr, len, cap) = vptr.into_raw_parts();
+                let (ptr, len, cap) = vptr.into_raw_parts_();
                 dds_qset_partition(qos, len as u32, ptr);
                 drop(Vec::from_raw_parts(ptr, len, cap));
             }
             // userdata
             if !self.userdata.is_empty() {
-                let (ptr, len, _) = self.userdata.clone().into_raw_parts();
+                let (ptr, len, _) = self.userdata.clone().into_raw_parts_();
                 dds_qset_userdata(qos, ptr as *const ::std::os::raw::c_void, len as size_t);
             }
             // ignore_local_participant
