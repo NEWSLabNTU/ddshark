@@ -7,6 +7,8 @@ pub const DEFAULT_DOMAIN: u32 = 0;
 pub struct Opts {
     #[clap(long)]
     pub domain_id: Option<u32>,
+    #[clap(long, default_value = "4")]
+    pub refresh_rate: u32,
 }
 
 pub fn default_domain() -> u32 {

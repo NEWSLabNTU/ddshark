@@ -1,9 +1,12 @@
 use crate::qos::Qos;
+use anyhow::{ensure, Result};
 use cyclors::{
     dds_builtintopic_endpoint_t, dds_create_listener, dds_create_participant, dds_create_reader,
-    dds_entity_t, dds_get_instance_handle, dds_get_participant, dds_instance_handle_t,
-    dds_instance_state_DDS_IST_ALIVE, dds_lset_data_available, dds_return_loan, dds_sample_info_t,
-    dds_take, size_t, DDS_BUILTIN_TOPIC_DCPSPUBLICATION, DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
+    dds_delete, dds_delete_listener, dds_entity_t, dds_get_instance_handle, dds_get_participant,
+    dds_instance_handle_t, dds_instance_state_DDS_IST_ALIVE, dds_listener_t,
+    dds_lset_data_available, dds_return_loan, dds_return_t, dds_sample_info_t, dds_take, size_t,
+    DDS_BUILTIN_TOPIC_DCPSPUBLICATION, DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION, DDS_RETCODE_ERROR,
+    DDS_RETCODE_OK,
 };
 use itertools::izip;
 use serde::{Deserialize, Serialize};
@@ -21,6 +24,104 @@ pub(crate) struct DdsEntity {
     pub(crate) keyless: bool,
     pub(crate) qos: Qos,
     // pub(crate) routes: HashMap<String, RouteStatus>, // map of routes statuses indexed by partition ("*" only if no partition)
+}
+
+pub(crate) struct DdsDiscoveryHandle {
+    domain_participant: dds_entity_t,
+    pub_reader: dds_entity_t,
+    pub_listener: *mut dds_listener_t,
+    sub_reader: dds_entity_t,
+    sub_listener: *mut dds_listener_t,
+    pub_context: *mut Context,
+    sub_context: *mut Context,
+}
+
+impl DdsDiscoveryHandle {
+    pub fn start(domain_id: u32, tx: flume::Sender<DiscoveryEvent>) -> Result<Self> {
+        unsafe {
+            let domain_participant: dds_entity_t =
+                dds_create_participant(domain_id, ptr::null(), ptr::null());
+
+            let (pub_reader, pub_listener, pub_context) = {
+                let ptx = Box::new(Context {
+                    pub_discovery: true,
+                    tx: tx.clone(),
+                });
+                let ptx = Box::into_raw(ptx);
+                let sub_listener = dds_create_listener(ptx as *mut c_void);
+
+                dds_lset_data_available(sub_listener, Some(on_data));
+                let pr = dds_create_reader(
+                    domain_participant,
+                    DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
+                    ptr::null(),
+                    sub_listener,
+                );
+                ensure!(pr != DDS_RETCODE_ERROR, "dds_create_reader() failed");
+
+                (pr, sub_listener, ptx)
+            };
+
+            let (sub_reader, sub_listener, sub_context) = {
+                let stx = Box::new(Context {
+                    pub_discovery: false,
+                    tx,
+                });
+                let stx = Box::into_raw(stx);
+                let sub_listener = dds_create_listener(stx as *mut c_void);
+
+                dds_lset_data_available(sub_listener, Some(on_data));
+                let sr = dds_create_reader(
+                    domain_participant,
+                    DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
+                    ptr::null(),
+                    sub_listener,
+                );
+                ensure!(sr != DDS_RETCODE_ERROR, "dds_create_reader() failed");
+
+                (sr, sub_listener, stx)
+            };
+
+            Ok(Self {
+                pub_reader,
+                sub_reader,
+                domain_participant,
+                pub_listener,
+                sub_listener,
+                pub_context,
+                sub_context,
+            })
+        }
+    }
+
+    pub fn stop(self) {}
+}
+
+impl Drop for DdsDiscoveryHandle {
+    fn drop(&mut self) {
+        let check_rc = |rc: dds_return_t| {
+            if rc != DDS_RETCODE_OK as i32 {
+                error!("INTERNAL ERROR dds_delete() failed with return code {rc}");
+            }
+        };
+
+        unsafe {
+            dds_delete_listener(self.pub_listener);
+            dds_delete_listener(self.sub_listener);
+
+            let rc = dds_delete(self.pub_reader);
+            check_rc(rc);
+
+            let rc = dds_delete(self.sub_reader);
+            check_rc(rc);
+
+            let rc = dds_delete(self.domain_participant);
+            check_rc(rc);
+
+            let _ = Box::from_raw(self.pub_context);
+            let _ = Box::from_raw(self.sub_context);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -42,46 +143,6 @@ fn send_discovery_event(sender: &flume::Sender<DiscoveryEvent>, event: Discovery
             "INTERNAL ERROR sending DiscoveryEvent to internal channel: {:?}",
             err
         );
-    }
-}
-
-pub(crate) fn run_discovery(domain_id: u32, tx: flume::Sender<DiscoveryEvent>) {
-    unsafe {
-        let dp: dds_entity_t = dds_create_participant(domain_id, ptr::null(), ptr::null());
-
-        let _pr = {
-            let ptx = Box::new(Context {
-                pub_discovery: true,
-                tx: tx.clone(),
-            });
-            let ptx = Box::into_raw(ptx) as *mut c_void;
-            let sub_listener = dds_create_listener(ptx);
-
-            dds_lset_data_available(sub_listener, Some(on_data));
-            dds_create_reader(
-                dp,
-                DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
-                ptr::null(),
-                sub_listener,
-            )
-        };
-
-        let _sr = {
-            let stx = Box::new(Context {
-                pub_discovery: false,
-                tx,
-            });
-            let stx = Box::into_raw(stx) as *mut c_void;
-            let sub_listener = dds_create_listener(stx);
-
-            dds_lset_data_available(sub_listener, Some(on_data));
-            dds_create_reader(
-                dp,
-                DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
-                ptr::null(),
-                sub_listener,
-            )
-        };
     }
 }
 
