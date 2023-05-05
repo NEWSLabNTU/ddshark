@@ -1,0 +1,3 @@
+[submodule "cyclors"]
+	path = cyclors
+	url = https://github.com/jerry73204/cyclors.git
