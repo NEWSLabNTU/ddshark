@@ -25,9 +25,12 @@ pub(crate) fn run_updater(rx: flume::Receiver<DiscoveryEvent>, state: Arc<Mutex<
         use DiscoveryEvent as D;
         match evt {
             D::DiscoveredPublication { entity } => {
-                state
+                let entry = state
                     .pub_keys
-                    .insert(entity.key.clone(), Entry::new(entity));
+                    .entry(entity.key.clone())
+                    .or_insert_with(|| Entry::new(entity));
+
+                entry.acc_msgs += 1;
             }
             D::UndiscoveredPublication { key } => {
                 let removed = state.pub_keys.remove(&key);
@@ -36,9 +39,12 @@ pub(crate) fn run_updater(rx: flume::Receiver<DiscoveryEvent>, state: Arc<Mutex<
                 }
             }
             D::DiscoveredSubscription { entity } => {
-                state
+                let entry = state
                     .sub_keys
-                    .insert(entity.key.clone(), Entry::new(entity));
+                    .entry(entity.key.clone())
+                    .or_insert_with(|| Entry::new(entity));
+
+                entry.acc_msgs += 1;
             }
             D::UndiscoveredSubscription { key } => {
                 let removed = state.sub_keys.remove(&key);

@@ -9,7 +9,6 @@ mod utils;
 use crate::{opts::Opts, state::State};
 use anyhow::Result;
 use clap::Parser;
-use dds::DdsDiscoveryHandle;
 use std::{
     sync::{Arc, Mutex},
     thread,
@@ -24,7 +23,9 @@ fn main() -> Result<()> {
     let (tx, rx) = flume::bounded(4);
 
     // Start DDS discovery processer
-    let dds_handle = DdsDiscoveryHandle::start(domain_id, tx)?;
+    let dds_handle = thread::spawn(move || {
+        dds::run_dds_discovery(domain_id, tx).unwrap();
+    });
 
     // Start state updater
     let updater_handle = {
@@ -41,7 +42,7 @@ fn main() -> Result<()> {
     // ui::run_tui(tick_dur, state)?;
 
     // Finalize
-    dds_handle.stop();
+    dds_handle.join().unwrap();
     updater_handle.join().unwrap();
 
     Ok(())

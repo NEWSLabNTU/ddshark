@@ -1,16 +1,19 @@
 use crate::qos::Qos;
-use anyhow::{ensure, Result};
+use anyhow::{bail, ensure, Result};
 use cyclors::{
     dds_builtintopic_endpoint_t, dds_create_listener, dds_create_participant, dds_create_reader,
-    dds_delete, dds_delete_listener, dds_entity_t, dds_get_instance_handle, dds_get_participant,
-    dds_instance_handle_t, dds_instance_state_DDS_IST_ALIVE, dds_listener_t,
-    dds_lset_data_available, dds_return_loan, dds_return_t, dds_sample_info_t, dds_take, size_t,
+    dds_create_statistics, dds_delete, dds_delete_listener, dds_delete_statistics, dds_entity_t,
+    dds_get_instance_handle, dds_get_participant, dds_instance_handle_t,
+    dds_instance_state_DDS_IST_ALIVE, dds_listener_t, dds_lset_data_available,
+    dds_refresh_statistics, dds_return_loan, dds_return_t, dds_sample_info_t, dds_stat_kind,
+    dds_stat_kind_DDS_STAT_KIND_LENGTHTIME, dds_stat_kind_DDS_STAT_KIND_UINT32,
+    dds_stat_kind_DDS_STAT_KIND_UINT64, dds_statistics, dds_take, size_t,
     DDS_BUILTIN_TOPIC_DCPSPUBLICATION, DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION, DDS_RETCODE_ERROR,
     DDS_RETCODE_OK,
 };
 use itertools::izip;
 use serde::{Deserialize, Serialize};
-use std::{ffi::CStr, mem::MaybeUninit, os::raw::c_void, ptr};
+use std::{ffi::CStr, mem::MaybeUninit, os::raw::c_void, ptr, thread, time::Duration};
 use tracing::{debug, error, warn};
 
 const MAX_SAMPLES: usize = 32;
@@ -26,101 +29,126 @@ pub(crate) struct DdsEntity {
     // pub(crate) routes: HashMap<String, RouteStatus>, // map of routes statuses indexed by partition ("*" only if no partition)
 }
 
-pub(crate) struct DdsDiscoveryHandle {
-    domain_participant: dds_entity_t,
-    pub_reader: dds_entity_t,
-    pub_listener: *mut dds_listener_t,
-    sub_reader: dds_entity_t,
-    sub_listener: *mut dds_listener_t,
-    pub_context: *mut Context,
-    sub_context: *mut Context,
-}
+pub(crate) fn run_dds_discovery(domain_id: u32, tx: flume::Sender<DiscoveryEvent>) -> Result<()> {
+    unsafe {
+        // Create domain participant
+        let domain_participant: dds_entity_t =
+            dds_create_participant(domain_id, ptr::null(), ptr::null());
 
-impl DdsDiscoveryHandle {
-    pub fn start(domain_id: u32, tx: flume::Sender<DiscoveryEvent>) -> Result<Self> {
-        unsafe {
-            let domain_participant: dds_entity_t =
-                dds_create_participant(domain_id, ptr::null(), ptr::null());
+        // Create a listener for publishers
+        let pub_context = Box::new(Context {
+            pub_discovery: true,
+            tx: tx.clone(),
+        });
+        let pub_context = Box::into_raw(pub_context);
+        let pub_listener = dds_create_listener(pub_context as *mut c_void);
+        dds_lset_data_available(pub_listener, Some(on_data));
 
-            let (pub_reader, pub_listener, pub_context) = {
-                let ptx = Box::new(Context {
-                    pub_discovery: true,
-                    tx: tx.clone(),
-                });
-                let ptx = Box::into_raw(ptx);
-                let sub_listener = dds_create_listener(ptx as *mut c_void);
+        // Create a reader for publishers
+        let pub_reader = dds_create_reader(
+            domain_participant,
+            DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
+            ptr::null(),
+            pub_listener,
+        );
+        ensure!(
+            pub_reader != DDS_RETCODE_ERROR,
+            "dds_create_reader() failed"
+        );
 
-                dds_lset_data_available(sub_listener, Some(on_data));
-                let pr = dds_create_reader(
-                    domain_participant,
-                    DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
-                    ptr::null(),
-                    sub_listener,
-                );
-                ensure!(pr != DDS_RETCODE_ERROR, "dds_create_reader() failed");
+        // Create a statistics obj for publishers
+        let pub_statistics = dds_create_statistics(pub_reader);
+        ensure!(!pub_statistics.is_null(), "dds_create_statistics() failed");
 
-                (pr, sub_listener, ptx)
-            };
+        // Create a listener for subscribers
+        let sub_context = Box::new(Context {
+            pub_discovery: false,
+            tx,
+        });
+        let sub_context = Box::into_raw(sub_context);
+        let sub_listener = dds_create_listener(sub_context as *mut c_void);
+        dds_lset_data_available(sub_listener, Some(on_data));
 
-            let (sub_reader, sub_listener, sub_context) = {
-                let stx = Box::new(Context {
-                    pub_discovery: false,
-                    tx,
-                });
-                let stx = Box::into_raw(stx);
-                let sub_listener = dds_create_listener(stx as *mut c_void);
+        // Create a reader for subscribers
+        let sub_reader = dds_create_reader(
+            domain_participant,
+            DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
+            ptr::null(),
+            sub_listener,
+        );
+        ensure!(
+            sub_reader != DDS_RETCODE_ERROR,
+            "dds_create_reader() failed"
+        );
 
-                dds_lset_data_available(sub_listener, Some(on_data));
-                let sr = dds_create_reader(
-                    domain_participant,
-                    DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
-                    ptr::null(),
-                    sub_listener,
-                );
-                ensure!(sr != DDS_RETCODE_ERROR, "dds_create_reader() failed");
+        // Create a statistics obj for subscribers
+        let sub_statistics = dds_create_statistics(sub_reader);
+        ensure!(!sub_statistics.is_null(), "dds_create_statistics() failed");
 
-                (sr, sub_listener, stx)
-            };
-
-            Ok(Self {
-                pub_reader,
-                sub_reader,
-                domain_participant,
-                pub_listener,
-                sub_listener,
-                pub_context,
-                sub_context,
-            })
-        }
-    }
-
-    pub fn stop(self) {}
-}
-
-impl Drop for DdsDiscoveryHandle {
-    fn drop(&mut self) {
         let check_rc = |rc: dds_return_t| {
             if rc != DDS_RETCODE_OK as i32 {
                 error!("INTERNAL ERROR dds_delete() failed with return code {rc}");
             }
         };
 
-        unsafe {
-            dds_delete_listener(self.pub_listener);
-            dds_delete_listener(self.sub_listener);
+        // Publish statistics periodically
+        loop {
+            let rc = dds_refresh_statistics(sub_statistics);
+            ensure!(
+                rc == DDS_RETCODE_OK as dds_return_t,
+                "dds_refresh_statistics() failed"
+            );
+            let pub_statistics = pub_statistics.as_ref().unwrap();
+            let kv_slice = pub_statistics.kv.as_slice(pub_statistics.count as usize);
 
-            let rc = dds_delete(self.pub_reader);
-            check_rc(rc);
+            #[derive(Debug)]
+            enum Value {
+                U32(u32),
+                U64(u64),
+                LengthTime(u64),
+            }
 
-            let rc = dds_delete(self.sub_reader);
-            check_rc(rc);
+            kv_slice.iter().try_for_each(|kv| {
+                let name = CStr::from_ptr(kv.name);
+                let name = name.to_str().unwrap();
 
-            let rc = dds_delete(self.domain_participant);
-            check_rc(rc);
+                let value = if kv.kind == dds_stat_kind_DDS_STAT_KIND_UINT32 {
+                    Value::U32(kv.u.u32_)
+                } else if kv.kind == dds_stat_kind_DDS_STAT_KIND_UINT64 {
+                    Value::U64(kv.u.u64_)
+                } else if kv.kind == dds_stat_kind_DDS_STAT_KIND_LENGTHTIME {
+                    Value::LengthTime(kv.u.lengthtime)
+                } else {
+                    bail!("Invalid kv.kind value {}", kv.kind);
+                };
 
-            let _ = Box::from_raw(self.pub_context);
-            let _ = Box::from_raw(self.sub_context);
+                dbg!((name, value));
+                anyhow::Ok(())
+            })?;
+
+            thread::sleep(Duration::from_secs(1));
         }
+
+        // Finalize
+        dds_delete_statistics(pub_statistics);
+        dds_delete_statistics(sub_statistics);
+
+        dds_delete_listener(pub_listener);
+        dds_delete_listener(sub_listener);
+
+        let rc = dds_delete(pub_reader);
+        check_rc(rc);
+
+        let rc = dds_delete(sub_reader);
+        check_rc(rc);
+
+        let rc = dds_delete(domain_participant);
+        check_rc(rc);
+
+        let _ = Box::from_raw(pub_context);
+        let _ = Box::from_raw(sub_context);
+
+        Ok(())
     }
 }
 
