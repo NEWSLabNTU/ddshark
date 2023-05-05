@@ -9,7 +9,8 @@ edition = "2021"
 anyhow = "1.0.71"
 clap = { version = "4.2.5", features = ["derive"] }
 crossterm = "0.26.1"
-cyclors = "0.1.7"
+# cyclors = "0.1.7"
+cyclors = { path = "cyclors", features = ["unstable-api"] }
 derivative = "2.2.0"
 flume = "0.10.14"
 futures = "0.3.28"
