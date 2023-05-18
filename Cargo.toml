@@ -21,6 +21,11 @@ tokio = { version = "1.28.0", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1.37"
 tui = "0.19.0"
 # zenoh-plugin-dds = { git = "https://github.com/eclipse-zenoh/zenoh-plugin-dds.git", rev = "6945047bc1fa4481e1dbcc615a5897a15614feeb" }
+rustdds = { path = "RustDDS" }
+pcap = "1.1.0"
+speedy = "0.8.6"
+bytes = "1.4.0"
+cdr = "0.2.4"
 
 [dev-dependencies]
 bincode = "1.3.3"

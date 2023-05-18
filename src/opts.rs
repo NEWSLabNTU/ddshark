@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::env;
+use std::{env, path::PathBuf};
 
 pub const DEFAULT_DOMAIN: u32 = 0;
 
@@ -7,8 +7,11 @@ pub const DEFAULT_DOMAIN: u32 = 0;
 pub struct Opts {
     #[clap(long)]
     pub domain_id: Option<u32>,
+
     #[clap(long, default_value = "4")]
     pub refresh_rate: u32,
+
+    pub input_file: PathBuf,
 }
 
 pub fn default_domain() -> u32 {
