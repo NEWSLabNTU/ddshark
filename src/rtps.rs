@@ -135,7 +135,12 @@ impl PacketCodec for PacketDecoder {
     type Item = Option<Message>;
 
     fn decode(&mut self, packet: pcap::Packet) -> Self::Item {
-        let payload = &packet.data[42..];
+        let position = packet
+            .data
+            .windows(4)
+            .position(|window| window == b"RTPS")?;
+
+        let payload = &packet.data[position..];
         if payload.get(0..4) != Some(b"RTPS") {
             return None;
         }
