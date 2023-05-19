@@ -1,33 +1,46 @@
-use crate::dds::DdsEntity;
+use rust_lapper::Lapper;
+use rustdds::{SequenceNumber, GUID};
 use std::collections::HashMap;
 
 /// The TUI state.
+#[derive(Debug)]
 pub(crate) struct State {
-    pub pub_keys: HashMap<String, Entry>,
-    pub sub_keys: HashMap<String, Entry>,
+    pub entities: HashMap<GUID, EntityState>,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
-            pub_keys: HashMap::new(),
-            sub_keys: HashMap::new(),
+            entities: HashMap::new(),
         }
     }
 }
 
-pub(crate) struct Entry {
-    pub entity: DdsEntity,
-    pub acc_msgs: usize,
-    pub acc_bytes: usize,
+#[derive(Debug)]
+pub struct EntityState {
+    pub frag_messages: HashMap<SequenceNumber, FragmentedMessage>,
 }
 
-impl Entry {
-    pub fn new(entity: DdsEntity) -> Self {
+impl Default for EntityState {
+    fn default() -> Self {
         Self {
-            entity,
-            acc_msgs: 0,
-            acc_bytes: 0,
+            frag_messages: HashMap::new(),
         }
     }
 }
+
+#[derive(Debug)]
+pub struct FragmentedMessage {
+    pub fragments: Lapper<usize, FragmentState>,
+}
+
+impl Default for FragmentedMessage {
+    fn default() -> Self {
+        Self {
+            fragments: Lapper::new(vec![]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FragmentState {}

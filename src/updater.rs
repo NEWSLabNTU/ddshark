@@ -1,16 +1,16 @@
 use crate::{
-    dds::DiscoveryEvent,
-    state::{Entry, State},
+    message::RtpsEvent,
+    state::{EntityState, FragmentedMessage, State},
 };
 use std::sync::{Arc, Mutex};
-use tracing::{error, warn};
+use tracing::error;
 
-pub(crate) fn run_updater(rx: flume::Receiver<DiscoveryEvent>, state: Arc<Mutex<State>>) {
+pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State>>) {
     // Consume event messages from rx.
     loop {
         use flume::RecvError as E;
 
-        let evt = match rx.recv() {
+        let event = match rx.recv() {
             Ok(evt) => evt,
             Err(E::Disconnected) => break,
         };
@@ -21,37 +21,21 @@ pub(crate) fn run_updater(rx: flume::Receiver<DiscoveryEvent>, state: Arc<Mutex<
         };
 
         // TODO: update UI state
-
-        use DiscoveryEvent as D;
-        match evt {
-            D::DiscoveredPublication { entity } => {
-                let entry = state
-                    .pub_keys
-                    .entry(entity.key.clone())
-                    .or_insert_with(|| Entry::new(entity));
-
-                entry.acc_msgs += 1;
+        match event {
+            RtpsEvent::Data(event) => {
+                // TODO: update statistics
             }
-            D::UndiscoveredPublication { key } => {
-                let removed = state.pub_keys.remove(&key);
-                if removed.is_none() {
-                    warn!("The key '{key}' is undiscovered but was not detected");
-                }
+            RtpsEvent::DataFrag(event) => {
+                let entity = state
+                    .entities
+                    .entry(event.writer_id)
+                    .or_insert_with(EntityState::default);
+                let msg_state = entity
+                    .frag_messages
+                    .entry(event.writer_sn)
+                    .or_insert_with(FragmentedMessage::default);
+                // TODO: insert fragment range into msg_state
             }
-            D::DiscoveredSubscription { entity } => {
-                let entry = state
-                    .sub_keys
-                    .entry(entity.key.clone())
-                    .or_insert_with(|| Entry::new(entity));
-
-                entry.acc_msgs += 1;
-            }
-            D::UndiscoveredSubscription { key } => {
-                let removed = state.sub_keys.remove(&key);
-                if removed.is_none() {
-                    warn!("The key '{key}' is undiscovered but was not detected");
-                }
-            }
-        };
+        }
     }
 }
