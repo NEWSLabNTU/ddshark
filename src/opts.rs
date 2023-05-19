@@ -6,9 +6,9 @@ pub struct Opts {
     #[clap(long, default_value = "4")]
     pub refresh_rate: u32,
 
-    #[clap(long)]
+    #[clap(short = 'f', long)]
     pub file: Option<PathBuf>,
 
-    #[clap(long)]
+    #[clap(short = 'i', long)]
     pub interface: Option<String>,
 }
