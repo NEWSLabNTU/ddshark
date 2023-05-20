@@ -18,6 +18,7 @@ impl Default for State {
 
 #[derive(Debug)]
 pub struct EntityState {
+    pub last_sn: Option<SequenceNumber>,
     pub frag_messages: HashMap<SequenceNumber, FragmentedMessage>,
 }
 
@@ -25,22 +26,24 @@ impl Default for EntityState {
     fn default() -> Self {
         Self {
             frag_messages: HashMap::new(),
+            last_sn: None,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct FragmentedMessage {
-    pub fragments: Lapper<usize, FragmentState>,
+    pub data_size: usize,
+    pub remaining_size: usize,
+    pub intervals: Lapper<usize, ()>,
 }
 
-impl Default for FragmentedMessage {
-    fn default() -> Self {
+impl FragmentedMessage {
+    pub fn new(data_size: usize) -> Self {
         Self {
-            fragments: Lapper::new(vec![]),
+            data_size,
+            remaining_size: data_size,
+            intervals: Lapper::new(vec![]),
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FragmentState {}
