@@ -3,9 +3,13 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use pcap::{Capture, Device, PacketCodec, PacketIter};
 use rustdds::{
+    dds::traits::serde_adapters::no_key::DeserializerAdapter,
+    discovery::data_types::topic_data::DiscoveredReaderData,
     messages::submessages::submessages::{Data, DataFrag, EntitySubmessage, InterpreterSubmessage},
-    serialization::{Message, SubMessage, SubmessageBody},
-    structure::sequence_number::FragmentNumber,
+    serialization::{
+        pl_cdr_deserializer::PlCdrDeserializerAdapter, Message, SubMessage, SubmessageBody,
+    },
+    structure::{guid::EntityId, sequence_number::FragmentNumber},
     GUID,
 };
 use std::path::PathBuf;
@@ -76,6 +80,18 @@ fn submsg_to_event(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
                     Some(payload) => payload.value.len(),
                     None => 0,
                 };
+
+                match writer_id {
+                    EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER => {
+                        let builtin_data: DiscoveredReaderData =
+                            PlCdrDeserializerAdapter::from_bytes(
+                                serialized_payload.as_ref()?.value.as_ref(),
+                                serialized_payload.as_ref()?.representation_identifier,
+                            )
+                            .unwrap();
+                    }
+                    _ => {}
+                }
 
                 Some(
                     DataEvent {
