@@ -4,7 +4,7 @@ use bytes::Bytes;
 use pcap::{Capture, Device, PacketCodec, PacketIter};
 use rustdds::{
     dds::traits::serde_adapters::no_key::DeserializerAdapter,
-    discovery::data_types::topic_data::DiscoveredReaderData,
+    discovery::data_types::topic_data::DiscoveredWriterData,
     messages::submessages::submessages::{Data, DataFrag, EntitySubmessage, InterpreterSubmessage},
     serialization::{
         pl_cdr_deserializer::PlCdrDeserializerAdapter, Message, SubMessage, SubmessageBody,
@@ -81,8 +81,8 @@ fn submsg_to_event(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
                     None => 0,
                 };
 
-                let discovery_data: Option<DiscoveredReaderData> = match writer_id {
-                    EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER => {
+                let discovery_data: Option<DiscoveredWriterData> = match writer_id {
+                    EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER => {
                         PlCdrDeserializerAdapter::from_bytes(
                             serialized_payload.as_ref()?.value.as_ref(),
                             serialized_payload.as_ref()?.representation_identifier,
