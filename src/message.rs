@@ -1,4 +1,4 @@
-use rustdds::{SequenceNumber, GUID};
+use rustdds::{discovery::data_types::topic_data::DiscoveredReaderData, SequenceNumber, GUID};
 
 #[derive(Debug)]
 pub enum RtpsEvent {
@@ -24,6 +24,7 @@ pub struct DataEvent {
     pub reader_id: GUID,
     pub writer_sn: SequenceNumber,
     pub payload_size: usize,
+    pub discovery_data: Option<DiscoveredReaderData>,
 }
 
 #[derive(Debug)]

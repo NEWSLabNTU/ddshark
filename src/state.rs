@@ -1,17 +1,19 @@
 use rust_lapper::Lapper;
-use rustdds::{SequenceNumber, GUID};
-use std::collections::HashMap;
+use rustdds::{discovery::data_types::topic_data::DiscoveredReaderData, SequenceNumber, GUID};
+use std::collections::{BTreeMap, HashMap};
 
 /// The TUI state.
 #[derive(Debug)]
 pub(crate) struct State {
     pub entities: HashMap<GUID, EntityState>,
+    pub topic_info: BTreeMap<GUID, DiscoveredReaderData>,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
             entities: HashMap::new(),
+            topic_info: BTreeMap::new(),
         }
     }
 }
