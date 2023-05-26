@@ -20,7 +20,7 @@ use std::{
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
-    let (tx, rx) = flume::bounded(4);
+    let (tx, rx) = flume::bounded(8192);
     let state = Arc::new(Mutex::new(State::default()));
 
     let rpts_watcher_handle = {
