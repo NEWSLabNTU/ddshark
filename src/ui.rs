@@ -1,7 +1,4 @@
-use crate::{
-    dds::DdsEntity,
-    state::{Entry, State},
-};
+use crate::state::{EntityState, State};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -57,6 +54,7 @@ impl Tui {
 
         Ok(())
     }
+
     fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         let mut table_state = TableState::default();
         let mut last_tick = Instant::now();
@@ -108,18 +106,43 @@ impl Tui {
         let block_top = Block::default().title("dashboard").borders(Borders::ALL);
         let block_bottom = Block::default().title("topics").borders(Borders::ALL);
 
-        let pub_rows = state
-            .pub_keys
-            .values()
-            .map(|entry| entiry_to_row("pub", entry, elapsed_time));
-        let sub_rows = state
-            .sub_keys
-            .values()
-            .map(|entry| entiry_to_row("sub", entry, elapsed_time));
-        let all_rows: Vec<_> = chain!(pub_rows, sub_rows).collect();
+        let rows: Vec<_> = state
+            .entities
+            .iter()
+            .map(|(guid, entity)| {
+                let EntityState {
+                    ref topic_info,
+                    last_sn,
+                    message_count,
+                    ..
+                } = *entity;
 
-        let (header, widths) = column_config();
-        let table = Table::new(all_rows)
+                let topic_name = topic_info
+                    .as_ref()
+                    .map(|topic_info| topic_info.publication_topic_data.topic_name.as_str())
+                    .unwrap_or("<none>");
+                let last_sn = last_sn
+                    .map(|sn| format!("{}", sn.0))
+                    .unwrap_or_else(String::new);
+
+                Row::new(vec![
+                    format!("{guid:?}"),
+                    topic_name.to_string(),
+                    last_sn,
+                    format!("{message_count}"),
+                ])
+            })
+            .collect();
+
+        let header = Row::new(vec!["GUID", "topic", "sn", "msg_count"]);
+        let widths = &[
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+        ];
+
+        let table = Table::new(rows)
             .style(Style::default().fg(Color::White))
             .header(header)
             .block(block_bottom)
@@ -131,51 +154,4 @@ impl Tui {
         frame.render_widget(block_top, chunks[0]);
         frame.render_stateful_widget(table, chunks[1], &mut self.table_state);
     }
-}
-
-fn column_config() -> (Row<'static>, &'static [Constraint]) {
-    let header = Row::new(vec![
-        "kind",
-        "key",
-        "topic",
-        "type",
-        "msg rate",
-        "byte rate",
-    ]);
-    let widths = &[
-        Constraint::Percentage(10),
-        Constraint::Percentage(10),
-        Constraint::Percentage(30),
-        Constraint::Percentage(30),
-        Constraint::Percentage(10),
-        Constraint::Percentage(10),
-    ];
-
-    (header, widths)
-}
-
-fn entiry_to_row<'a>(kind: &'a str, entity: &'a Entry, elapsed_time: Duration) -> Row<'a> {
-    let elapsed_secs = elapsed_time.as_secs_f64();
-    let Entry {
-        entity:
-            DdsEntity {
-                key,
-                participant_key,
-                topic_name,
-                type_name,
-                keyless,
-                qos,
-            },
-        acc_msgs,
-        acc_bytes,
-    } = entity;
-
-    Row::new(vec![
-        kind.to_string(),
-        key.to_string(),
-        topic_name.to_string(),
-        type_name.to_string(),
-        acc_msgs.to_string(),
-        acc_bytes.to_string(),
-    ])
 }

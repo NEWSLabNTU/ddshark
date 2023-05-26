@@ -1,5 +1,4 @@
-use rustdds::discovery::data_types::topic_data::DiscoveredWriterData;
-use rustdds::{SequenceNumber, GUID};
+use rustdds::{discovery::data_types::topic_data::DiscoveredWriterData, SequenceNumber, GUID};
 
 #[derive(Debug)]
 pub enum RtpsEvent {

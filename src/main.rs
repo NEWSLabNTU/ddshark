@@ -2,9 +2,9 @@ mod message;
 mod opts;
 mod rtps;
 mod state;
+mod ui;
 mod updater;
 mod utils;
-// mod ui;
 // mod qos;
 // mod dds;
 
@@ -15,8 +15,9 @@ use rtps::PacketSource;
 use std::{
     sync::{Arc, Mutex},
     thread,
+    time::Duration,
 };
-// use ui::Tui;
+use ui::Tui;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
@@ -45,10 +46,9 @@ fn main() -> Result<()> {
     };
 
     // Run TUI
-    // let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
-    // let tui = Tui::new(tick_dur, state);
-    // tui.run()?;
-    // ui::run_tui(tick_dur, state)?;
+    let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
+    let tui = Tui::new(tick_dur, state);
+    tui.run()?;
 
     // Finalize
     rpts_watcher_handle.join().unwrap()?;

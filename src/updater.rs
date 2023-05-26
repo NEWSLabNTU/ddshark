@@ -31,6 +31,15 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
                     .entry(event.writer_id)
                     .or_insert_with(EntityState::default);
                 entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
+
+                if let Some(discovery_data) = event.discovery_data {
+                    if entity.topic_info.is_some() {
+                        // TODO: show warning
+                    }
+                    entity.topic_info = Some(discovery_data);
+                }
+
+                entity.message_count += 1;
             }
             RtpsEvent::DataFrag(event) => {
                 let entity = state
@@ -70,6 +79,7 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
                 if is_finished {
                     entity.frag_messages.remove(&event.writer_sn);
                     entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
+                    entity.message_count += 1;
                 }
             }
         }
