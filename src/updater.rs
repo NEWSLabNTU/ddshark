@@ -31,15 +31,22 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
                     .entry(event.writer_id)
                     .or_insert_with(EntityState::default);
                 entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
+                entity.message_count += 1;
 
                 if let Some(discovery_data) = event.discovery_data {
                     if entity.topic_info.is_some() {
                         // TODO: show warning
                     }
+
+                    // Insert the discovery data into state.entities with remote_writer_guid,
+                    // if it doesn't exist, then create a new entity corresponding to the remote_writer_guid.
+                    // if it exists, then update the entity with the discovery data.
+                    let entity = state
+                        .entities
+                        .entry(discovery_data.writer_proxy.remote_writer_guid)
+                        .or_insert_with(EntityState::default);
                     entity.topic_info = Some(discovery_data);
                 }
-
-                entity.message_count += 1;
             }
             RtpsEvent::DataFrag(event) => {
                 let entity = state
