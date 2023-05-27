@@ -6,6 +6,7 @@ use crossterm::{
 };
 use itertools::chain;
 use std::{
+    cmp::Reverse,
     io,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -106,9 +107,17 @@ impl Tui {
         let block_top = Block::default().title("dashboard").borders(Borders::ALL);
         let block_bottom = Block::default().title("topics").borders(Borders::ALL);
 
-        let rows: Vec<_> = state
-            .entities
-            .iter()
+        let mut entities: Vec<_> = state.entities.iter().collect();
+        entities.sort_by_cached_key(|(guid, entity)| {
+            let topic_name = entity
+                .topic_info
+                .as_ref()
+                .map(|info| info.publication_topic_data.topic_name.to_string());
+            (Reverse(topic_name), *guid)
+        });
+
+        let rows: Vec<_> = entities
+            .into_iter()
             .map(|(guid, entity)| {
                 let EntityState {
                     ref topic_info,
@@ -116,6 +125,12 @@ impl Tui {
                     message_count,
                     ..
                 } = *entity;
+
+                let guid = format!(
+                    "{}{}",
+                    hex::encode(guid.prefix.bytes),
+                    hex::encode(guid.entity_id.entity_key)
+                );
 
                 let topic_name = topic_info
                     .as_ref()
