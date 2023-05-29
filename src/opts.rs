@@ -11,4 +11,10 @@ pub struct Opts {
 
     #[clap(short = 'i', long)]
     pub interface: Option<String>,
+
+    #[clap(short = 'o', long)]
+    pub otlp_enable: bool,
+
+    #[clap(short = 'e', long, default_value = "http://localhost:4317")]
+    pub otlp_endpoint: Option<String>,
 }

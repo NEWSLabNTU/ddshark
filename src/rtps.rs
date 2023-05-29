@@ -1,4 +1,4 @@
-use crate::message::{DataEvent, DataFragEvent, RtpsEvent};
+use crate::message::{DataEvent, DataFragEvent, PacketHeaders, RtpsEvent, RtpsMessage};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use etherparse::{Ethernet2Header, SingleVlanHeader};
@@ -20,7 +20,7 @@ use std::net::Ipv4Addr;
 use std::path::PathBuf;
 use tracing::{error, warn};
 
-pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsEvent>) -> Result<()> {
+pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Result<()> {
     let iter = match source {
         PacketSource::Default => {
             let cap = Device::lookup()?
@@ -43,7 +43,7 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsEvent>) -> Resul
     };
 
     'msg_loop: for msg in iter {
-        let msg = msg?;
+        let (headers, msg) = msg?;
 
         let events = msg
             .submessages
@@ -53,7 +53,10 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsEvent>) -> Resul
         for event in events {
             use flume::TrySendError as E;
 
-            match tx.try_send(event) {
+            match tx.try_send(RtpsMessage {
+                headers: headers.clone(),
+                event: event,
+            }) {
                 Ok(()) => {}
                 Err(E::Disconnected(_)) => break 'msg_loop,
                 Err(E::Full(_)) => {
@@ -272,7 +275,7 @@ impl PacketDecoder {
 }
 
 impl PacketCodec for PacketDecoder {
-    type Item = Option<Message>;
+    type Item = Option<(PacketHeaders, Message)>;
 
     fn decode(&mut self, packet: pcap::Packet) -> Self::Item {
         let (eth_header, vlan_header, packet_data) = Self::dissect_eth_header(&packet).ok()?;
@@ -303,7 +306,15 @@ impl PacketCodec for PacketDecoder {
             }
         };
 
-        Some(message)
+        Some((
+            PacketHeaders {
+                pcap_header: packet.header.clone(),
+                eth_header: eth_header,
+                vlan_header: vlan_header,
+                ipv4_header: ip_repr,
+            },
+            message,
+        ))
     }
 }
 
@@ -320,7 +331,7 @@ enum MessageIter {
 }
 
 impl Iterator for MessageIter {
-    type Item = Result<Message, pcap::Error>;
+    type Item = Result<(PacketHeaders, Message), pcap::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
