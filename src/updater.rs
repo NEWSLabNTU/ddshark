@@ -1,5 +1,7 @@
+use crate::opts::Opts;
+use crate::otlp;
 use crate::{
-    message::RtpsEvent,
+    message::{RtpsEvent, RtpsMessage},
     state::{EntityState, FragmentedMessage, State},
 };
 use rust_lapper::Interval;
@@ -9,12 +11,23 @@ use std::{
 };
 use tracing::error;
 
-pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State>>) {
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+pub(crate) async fn run_updater(
+    rx: flume::Receiver<RtpsMessage>,
+    state: Arc<Mutex<State>>,
+    opt: Opts,
+) {
+    // Enable OTLP if `otlp_enable` is true.
+    let otlp_handle = match opt.otlp_enable {
+        true => Some(otlp::TraceHandle::new(opt)),
+        false => None,
+    };
+
     // Consume event messages from rx.
     loop {
         use flume::RecvError as E;
 
-        let event = match rx.recv() {
+        let message = match rx.recv() {
             Ok(evt) => evt,
             Err(E::Disconnected) => break,
         };
@@ -23,6 +36,9 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
             error!("INTERNAL ERROR Mutex poision error");
             break;
         };
+
+        let otlp_message = message.clone();
+        let (_, event) = (message.headers, message.event);
 
         match event {
             RtpsEvent::Data(event) => {
@@ -33,6 +49,12 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
                 entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
                 entity.message_count += 1;
 
+                let topic_name = match &entity.topic_info {
+                    Some(info) => info.publication_topic_data.topic_name.clone(),
+                    None => "<none>".to_string(),
+                };
+
+                // Update discovered data in state.entities
                 if let Some(discovery_data) = event.discovery_data {
                     if entity.topic_info.is_some() {
                         // TODO: show warning
@@ -46,6 +68,10 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
                         .entry(discovery_data.writer_proxy.remote_writer_guid)
                         .or_insert_with(EntityState::default);
                     entity.topic_info = Some(discovery_data);
+                }
+
+                if let Some(otlp) = otlp_handle.as_ref() {
+                    otlp.send_trace(&otlp_message, topic_name.clone());
                 }
             }
             RtpsEvent::DataFrag(event) => {
@@ -87,6 +113,15 @@ pub(crate) fn run_updater(rx: flume::Receiver<RtpsEvent>, state: Arc<Mutex<State
                     entity.frag_messages.remove(&event.writer_sn);
                     entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
                     entity.message_count += 1;
+                }
+
+                let topic_name = match &entity.topic_info {
+                    Some(info) => info.publication_topic_data.topic_name.clone(),
+                    None => "<none>".to_string(),
+                };
+
+                if let Some(otlp) = otlp_handle.as_ref() {
+                    otlp.send_trace(&otlp_message, topic_name.clone());
                 }
             }
         }

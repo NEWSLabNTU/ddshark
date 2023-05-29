@@ -1,5 +1,6 @@
 mod message;
 mod opts;
+mod otlp;
 mod rtps;
 mod state;
 mod ui;
@@ -21,6 +22,8 @@ use ui::Tui;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
+    let opts_clone = opts.clone();
+
     let (tx, rx) = flume::bounded(8192);
     let state = Arc::new(Mutex::new(State::default()));
 
@@ -41,7 +44,7 @@ fn main() -> Result<()> {
     let updater_handle = {
         let state = state.clone();
         thread::spawn(|| {
-            crate::updater::run_updater(rx, state);
+            crate::updater::run_updater(rx, state, opts_clone);
         })
     };
 
