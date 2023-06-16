@@ -1,7 +1,7 @@
 use etherparse::{Ethernet2Header, SingleVlanHeader};
 use pcap;
 use rustdds::{discovery::data_types::topic_data::DiscoveredWriterData, SequenceNumber, GUID};
-use smoltcp::wire::{Ipv4Packet, Ipv4Repr};
+use smoltcp::wire::Ipv4Repr;
 
 #[derive(Debug, Clone)]
 pub enum RtpsEvent {

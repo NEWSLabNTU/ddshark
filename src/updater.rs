@@ -1,7 +1,7 @@
-use crate::opts::Opts;
-use crate::otlp;
 use crate::{
     message::{RtpsEvent, RtpsMessage},
+    opts::Opts,
+    otlp,
     state::{EntityState, FragmentedMessage, State},
 };
 use rust_lapper::Interval;
@@ -19,7 +19,7 @@ pub(crate) async fn run_updater(
 ) {
     // Enable OTLP if `otlp_enable` is true.
     let otlp_handle = match opt.otlp_enable {
-        true => Some(otlp::TraceHandle::new(opt)),
+        true => Some(otlp::TraceHandle::new(&opt)),
         false => None,
     };
 

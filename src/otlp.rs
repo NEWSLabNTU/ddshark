@@ -1,22 +1,21 @@
 use gethostname::gethostname;
 use mac_address::mac_address_by_name;
 
-use opentelemetry_api::global::shutdown_tracer_provider;
-use opentelemetry_api::trace::{Span, SpanBuilder, SpanKind, TraceError};
 use opentelemetry_api::{
-    metrics,
-    trace::{TraceContextExt, Tracer},
-    Context, Key, KeyValue,
+    global::shutdown_tracer_provider,
+    trace::{Span, SpanBuilder, SpanKind, Tracer},
+    KeyValue,
 };
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, trace::Sampler, Resource};
 use opentelemetry_semantic_conventions as semcov;
-use std::alloc::System;
 use std::time::{Duration, SystemTime};
 
-use crate::message::{RtpsEvent, RtpsMessage};
-use crate::opts::Opts;
-use rustdds::structure::guid::{EntityId, EntityKind};
+use crate::{
+    message::{RtpsEvent, RtpsMessage},
+    opts::Opts,
+};
+use rustdds::structure::guid::EntityKind;
 
 pub struct TraceHandle {
     tracer: sdktrace::Tracer,
@@ -24,8 +23,8 @@ pub struct TraceHandle {
 }
 
 impl TraceHandle {
-    pub fn new(opts: Opts) -> Self {
-        let mac_address = match mac_address_by_name(&opts.interface.unwrap_or("eno2".to_string())) {
+    pub fn new(opts: &Opts) -> Self {
+        let mac_address = match mac_address_by_name(&opts.interface.as_deref().unwrap_or("eno2")) {
             Ok(Some(ma)) => ma.bytes(),
             Ok(None) => [0; 6],
             Err(_) => [0; 6],
@@ -34,7 +33,8 @@ impl TraceHandle {
         // `endpoint` should always be set from the opts.
         let endpoint = opts
             .otlp_endpoint
-            .unwrap_or_else(|| "http://localhost:4317".to_string());
+            .as_deref()
+            .unwrap_or("http://localhost:4317");
 
         let exporter = opentelemetry_otlp::new_exporter()
             .tonic()
@@ -74,7 +74,7 @@ impl TraceHandle {
     pub fn send_trace(&self, message: &RtpsMessage, topic_name: String) -> () {
         let (headers, event) = (message.headers.clone(), message.event.clone());
         let capture_time = headers.pcap_header.ts;
-        let ma: [u8; 6] = headers.eth_header.destination;
+        // let ma: [u8; 6] = headers.eth_header.destination;
 
         let (submsg_type, writer_id, sn, payload_size) = match event {
             RtpsEvent::Data(event) => {

@@ -13,11 +13,15 @@ use rustdds::{
     structure::{guid::EntityId, sequence_number::FragmentNumber},
     GUID,
 };
-use smoltcp::phy::ChecksumCapabilities;
-use smoltcp::wire::{Ipv4Packet, Ipv4Repr};
-use std::collections::{BTreeMap, HashMap};
-use std::net::Ipv4Addr;
-use std::path::PathBuf;
+use smoltcp::{
+    phy::ChecksumCapabilities,
+    wire::{Ipv4Packet, Ipv4Repr},
+};
+use std::{
+    collections::{BTreeMap, HashMap},
+    net::Ipv4Addr,
+    path::PathBuf,
+};
 use tracing::{error, warn};
 
 pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Result<()> {
