@@ -78,14 +78,19 @@ impl TraceHandle {
         let capture_time = headers.pcap_header.ts;
         let ma: [u8; 6] = headers.eth_header.destination;
 
-        let (submsg_type, writer_id, sn, payload_size) = match event {
-            RtpsEvent::Data(event) => {
-                ("DATA", event.writer_id, event.writer_sn, event.payload_size)
-            }
+        let (submsg_type, writer_id, sn, fragment_starting_num, payload_size) = match event {
+            RtpsEvent::Data(event) => (
+                "DATA",
+                event.writer_id,
+                event.writer_sn,
+                0 as u32,
+                event.payload_size,
+            ),
             RtpsEvent::DataFrag(event) => (
                 "DATA_FRAG",
                 event.writer_id,
                 event.writer_sn,
+                event.fragment_starting_num,
                 event.payload_size,
             ),
         };
@@ -102,6 +107,7 @@ impl TraceHandle {
             KeyValue::new("topic_name", topic_name.clone()),
             KeyValue::new("writer_id", convert_to_colon_sep_hex(writer_id.to_bytes())),
             KeyValue::new("sn", sn.0),
+            KeyValue::new("fragment_starting_num", fragment_starting_num as i64),
             KeyValue::new("payload_size", payload_size as i64),
             KeyValue::new(
                 "pcp",
