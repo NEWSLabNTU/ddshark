@@ -59,7 +59,7 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Res
 
             match tx.try_send(RtpsMessage {
                 headers: headers.clone(),
-                event: event,
+                event,
             }) {
                 Ok(()) => {}
                 Err(E::Disconnected(_)) => break 'msg_loop,
