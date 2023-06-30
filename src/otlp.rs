@@ -4,19 +4,23 @@ use mac_address::mac_address_by_name;
 
 use opentelemetry_api::{
     global::shutdown_tracer_provider,
-    trace::{Span, SpanBuilder, SpanKind, Tracer},
-    KeyValue,
+    metrics,
+    trace::{Span, SpanBuilder, SpanKind, TraceContextExt, TraceError, Tracer},
+    Context, Key, KeyValue,
 };
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, trace::Sampler, Resource};
 use opentelemetry_semantic_conventions as semcov;
-use std::time::{Duration, SystemTime};
+use std::{
+    alloc::System,
+    time::{Duration, SystemTime},
+};
 
 use crate::{
     message::{RtpsEvent, RtpsMessage},
     opts::Opts,
 };
-use rustdds::structure::guid::EntityKind;
+use rustdds::structure::guid::{EntityId, EntityKind};
 
 pub struct TraceHandle {
     tracer: sdktrace::Tracer,
