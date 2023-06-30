@@ -1,3 +1,4 @@
+use etherparse::SingleVlanHeader;
 use gethostname::gethostname;
 use mac_address::mac_address_by_name;
 
@@ -55,7 +56,8 @@ impl TraceHandle {
 
         let batch_config = sdktrace::BatchConfig::default()
             .with_max_concurrent_exports(4)
-            .with_max_export_batch_size(512);
+            .with_max_export_batch_size(512)
+            .with_max_queue_size(500000);
 
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
@@ -76,14 +78,19 @@ impl TraceHandle {
         let capture_time = headers.pcap_header.ts;
         // let ma: [u8; 6] = headers.eth_header.destination;
 
-        let (submsg_type, writer_id, sn, payload_size) = match event {
-            RtpsEvent::Data(event) => {
-                ("DATA", event.writer_id, event.writer_sn, event.payload_size)
-            }
+        let (submsg_type, writer_id, sn, fragment_starting_num, payload_size) = match event {
+            RtpsEvent::Data(event) => (
+                "DATA",
+                event.writer_id,
+                event.writer_sn,
+                0 as u32,
+                event.payload_size,
+            ),
             RtpsEvent::DataFrag(event) => (
                 "DATA_FRAG",
                 event.writer_id,
                 event.writer_sn,
+                event.fragment_starting_num,
                 event.payload_size,
             ),
         };
@@ -100,11 +107,19 @@ impl TraceHandle {
             KeyValue::new("topic_name", topic_name.clone()),
             KeyValue::new("writer_id", convert_to_colon_sep_hex(writer_id.to_bytes())),
             KeyValue::new("sn", sn.0),
+            KeyValue::new("fragment_starting_num", fragment_starting_num as i64),
             KeyValue::new("payload_size", payload_size as i64),
+            KeyValue::new(
+                "pcp",
+                headers
+                    .vlan_header
+                    .unwrap_or(SingleVlanHeader::default())
+                    .priority_code_point as i64,
+            ),
         ];
 
         // Create a span with the given attributes. The start time is set to captured time.
-        // The end time is set to captured time + payload size / 2.5Gbps.
+        // The end time is set to captured time + payload size * 8 / 2.5Gbps.
         let mut span = self.tracer.build(SpanBuilder {
             name: submsg_type.into(),
             span_kind: Some(SpanKind::Internal),
@@ -114,7 +129,7 @@ impl TraceHandle {
         });
         span.end_with_timestamp(
             convert_to_system_time(capture_time)
-                + Duration::from_secs_f64(payload_size as f64 / (2.5 * 1e9)),
+                + Duration::from_secs_f64(payload_size as f64 * 8. / (2.5 * 1e9)),
         );
 
         ()
