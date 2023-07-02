@@ -1,10 +1,12 @@
-use crate::state::{EntityState, State};
+use crate::{
+    state::{EntityState, State},
+    utils::GUIDExt,
+};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use itertools::chain;
 use std::{
     cmp::Reverse,
     io,
@@ -126,12 +128,6 @@ impl Tui {
                     ..
                 } = *entity;
 
-                let guid = format!(
-                    "{}{}",
-                    hex::encode(guid.prefix.bytes),
-                    hex::encode(guid.entity_id.entity_key)
-                );
-
                 let topic_name = topic_info
                     .as_ref()
                     .map(|topic_info| topic_info.publication_topic_data.topic_name.as_str())
@@ -141,7 +137,7 @@ impl Tui {
                     .unwrap_or_else(String::new);
 
                 Row::new(vec![
-                    format!("{guid:?}"),
+                    format!("{}", guid.display()),
                     topic_name.to_string(),
                     last_sn,
                     format!("{message_count}"),
