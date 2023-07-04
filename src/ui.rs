@@ -1,6 +1,6 @@
 use crate::{
     state::{EntityState, State},
-    utils::GUIDExt,
+    utils::{num_base10_digits_i64, num_base10_digits_usize, GUIDExt},
 };
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -94,6 +94,8 @@ impl Tui {
     }
 
     fn draw_ui<B: Backend>(&mut self, frame: &mut Frame<B>, elapsed_time: Duration) {
+        const NONE_TEXT: &str = "<none>";
+
         let Ok(state) = self.state.lock() else {
             // TODO: show error
             error!("Mutex is poisoned");
@@ -119,22 +121,23 @@ impl Tui {
         });
 
         let rows: Vec<_> = entities
-            .into_iter()
+            .iter()
             .map(|(guid, entity)| {
                 let EntityState {
                     ref topic_info,
                     last_sn,
                     message_count,
+                    ref frag_messages,
                     ..
                 } = *entity;
 
                 let topic_name = topic_info
                     .as_ref()
                     .map(|topic_info| topic_info.publication_topic_data.topic_name.as_str())
-                    .unwrap_or("<none>");
+                    .unwrap_or(NONE_TEXT);
                 let last_sn = last_sn
                     .map(|sn| format!("{}", sn.0))
-                    .unwrap_or_else(String::new);
+                    .unwrap_or_else(|| NONE_TEXT.to_string());
 
                 Row::new(vec![
                     format!("{}", guid.display()),
@@ -145,12 +148,42 @@ impl Tui {
             })
             .collect();
 
-        let header = Row::new(vec!["GUID", "topic", "sn", "msg_count"]);
+        let topic_col_len = state
+            .entities
+            .values()
+            .map(|entity| {
+                let Some(info) = entity.topic_info.as_ref() else {
+                    return NONE_TEXT.len();
+                };
+                info.publication_topic_data.topic_name.as_str().len()
+            })
+            .min()
+            .unwrap_or(0);
+        let sn_col_len = state
+            .entities
+            .values()
+            .map(|entity| {
+                let Some(last_sn) = entity.last_sn else {
+                    return NONE_TEXT.len() as u32;
+                };
+                num_base10_digits_i64(last_sn.0)
+            })
+            .max()
+            .unwrap_or(0);
+        let msg_count_col_len = state
+            .entities
+            .values()
+            .map(|entity| num_base10_digits_usize(entity.message_count))
+            .max()
+            .unwrap_or(0);
+
+        let header = Row::new(vec!["GUID", "topic", "sn", "msg_count", "fragments"]);
         let widths = &[
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
+            Constraint::Length(32),
+            Constraint::Length(topic_col_len as u16),
+            Constraint::Length(sn_col_len as u16),
+            Constraint::Length(msg_count_col_len as u16),
+            Constraint::Length(100),
         ];
 
         let table = Table::new(rows)
