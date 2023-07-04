@@ -38,7 +38,6 @@ impl Default for EntityState {
 #[derive(Debug)]
 pub struct FragmentedMessage {
     pub data_size: usize,
-    pub remaining_size: usize,
     pub intervals: Lapper<usize, ()>,
 }
 
@@ -46,7 +45,6 @@ impl FragmentedMessage {
     pub fn new(data_size: usize) -> Self {
         Self {
             data_size,
-            remaining_size: data_size,
             intervals: Lapper::new(vec![]),
         }
     }

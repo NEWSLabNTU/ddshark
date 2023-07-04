@@ -1,26 +1,20 @@
-use etherparse::SingleVlanHeader;
-use gethostname::gethostname;
-use mac_address::mac_address_by_name;
-
-use opentelemetry_api::{
-    global::shutdown_tracer_provider,
-    metrics,
-    trace::{Span, SpanBuilder, SpanKind, TraceContextExt, TraceError, Tracer},
-    Context, Key, KeyValue,
-};
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::{runtime, trace as sdktrace, trace::Sampler, Resource};
-use opentelemetry_semantic_conventions as semcov;
-use std::{
-    alloc::System,
-    time::{Duration, SystemTime},
-};
-
 use crate::{
     message::{RtpsEvent, RtpsMessage},
     opts::Opts,
 };
-use rustdds::structure::guid::{EntityId, EntityKind};
+use etherparse::SingleVlanHeader;
+use gethostname::gethostname;
+use mac_address::mac_address_by_name;
+use opentelemetry_api::{
+    global::shutdown_tracer_provider,
+    trace::{Span, SpanBuilder, SpanKind, Tracer},
+    KeyValue,
+};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::{runtime, trace as sdktrace, trace::Sampler, Resource};
+use opentelemetry_semantic_conventions as semcov;
+use rustdds::structure::guid::EntityKind;
+use std::time::{Duration, SystemTime};
 
 pub struct TraceHandle {
     tracer: sdktrace::Tracer,
@@ -29,7 +23,7 @@ pub struct TraceHandle {
 
 impl TraceHandle {
     pub fn new(opts: &Opts) -> Self {
-        let mac_address = match mac_address_by_name(&opts.interface.as_deref().unwrap_or("eno2")) {
+        let mac_address = match mac_address_by_name(opts.interface.as_deref().unwrap_or("eno2")) {
             Ok(Some(ma)) => ma.bytes(),
             Ok(None) => [0; 6],
             Err(_) => [0; 6],
@@ -77,7 +71,7 @@ impl TraceHandle {
         }
     }
 
-    pub fn send_trace(&self, message: &RtpsMessage, topic_name: String) -> () {
+    pub fn send_trace(&self, message: &RtpsMessage, topic_name: String) {
         let (headers, event) = (message.headers.clone(), message.event.clone());
         let capture_time = headers.pcap_header.ts;
         // let ma: [u8; 6] = headers.eth_header.destination;
@@ -87,7 +81,7 @@ impl TraceHandle {
                 "DATA",
                 event.writer_id,
                 event.writer_sn,
-                0 as u32,
+                0u32,
                 event.payload_size,
             ),
             RtpsEvent::DataFrag(event) => (
@@ -108,7 +102,7 @@ impl TraceHandle {
         let attrs = vec![
             semcov::trace::EVENT_NAME.string("eno2"),
             KeyValue::new("traffic_type", traffic_type.to_string()),
-            KeyValue::new("topic_name", topic_name.clone()),
+            KeyValue::new("topic_name", topic_name),
             KeyValue::new("writer_id", convert_to_colon_sep_hex(writer_id.to_bytes())),
             KeyValue::new("sn", sn.0),
             KeyValue::new("fragment_starting_num", fragment_starting_num as i64),
@@ -135,8 +129,6 @@ impl TraceHandle {
             convert_to_system_time(capture_time)
                 + Duration::from_secs_f64(payload_size as f64 * 8. / (2.5 * 1e9)),
         );
-
-        ()
     }
 }
 

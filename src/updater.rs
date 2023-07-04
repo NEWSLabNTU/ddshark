@@ -5,10 +5,7 @@ use crate::{
     state::{EntityState, FragmentedMessage, State},
 };
 use rust_lapper::Interval;
-use std::{
-    cmp,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 use tracing::error;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]

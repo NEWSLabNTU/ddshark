@@ -59,7 +59,7 @@ impl Tui {
     }
 
     fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
-        let mut table_state = TableState::default();
+        // let mut table_state = TableState::default();
         let mut last_tick = Instant::now();
 
         loop {
@@ -85,7 +85,6 @@ impl Tui {
                 terminal.draw(|frame| self.draw_ui(frame, elapsed_time))?;
 
                 // Clean up state
-
                 last_tick = Instant::now();
             }
         }
