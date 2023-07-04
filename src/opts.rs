@@ -17,4 +17,7 @@ pub struct Opts {
 
     #[clap(short = 'e', long, default_value = "http://localhost:4317")]
     pub otlp_endpoint: Option<String>,
+
+    #[clap(long)]
+    pub no_tui: bool,
 }

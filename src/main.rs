@@ -49,9 +49,11 @@ fn main() -> Result<()> {
     };
 
     // Run TUI
-    let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
-    let tui = Tui::new(tick_dur, state);
-    tui.run()?;
+    if !opts.no_tui {
+        let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
+        let tui = Tui::new(tick_dur, state);
+        tui.run()?;
+    }
 
     // Finalize
     rpts_watcher_handle.join().unwrap()?;
