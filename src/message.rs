@@ -1,23 +1,22 @@
 use etherparse::{Ethernet2Header, SingleVlanHeader};
-use pcap;
 use rustdds::{discovery::data_types::topic_data::DiscoveredWriterData, SequenceNumber, GUID};
 use smoltcp::wire::Ipv4Repr;
 
 #[derive(Debug, Clone)]
 pub enum RtpsEvent {
-    Data(DataEvent),
-    DataFrag(DataFragEvent),
+    Data(Box<DataEvent>),
+    DataFrag(Box<DataFragEvent>),
 }
 
 impl From<DataFragEvent> for RtpsEvent {
     fn from(v: DataFragEvent) -> Self {
-        Self::DataFrag(v)
+        Self::DataFrag(Box::new(v))
     }
 }
 
 impl From<DataEvent> for RtpsEvent {
     fn from(v: DataEvent) -> Self {
-        Self::Data(v)
+        Self::Data(Box::new(v))
     }
 }
 

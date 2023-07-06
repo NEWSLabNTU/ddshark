@@ -41,17 +41,17 @@ pub(crate) async fn run_updater(
 
         match event {
             RtpsEvent::Data(event) => {
-                handle_data_event(event, &mut state, otlp_handle.as_ref(), otlp_message);
+                handle_data_event(&event, &mut state, otlp_handle.as_ref(), otlp_message);
             }
             RtpsEvent::DataFrag(event) => {
-                handle_data_frag_event(event, &mut state, otlp_handle.as_ref(), otlp_message);
+                handle_data_frag_event(&event, &mut state, otlp_handle.as_ref(), otlp_message);
             }
         }
     }
 }
 
 fn handle_data_event(
-    event: DataEvent,
+    event: &DataEvent,
     state: &mut State,
     otlp_handle: Option<&otlp::TraceHandle>,
     otlp_message: RtpsMessage,
@@ -69,7 +69,7 @@ fn handle_data_event(
     };
 
     // Update discovered data in state.entities
-    if let Some(discovery_data) = event.discovery_data {
+    if let Some(discovery_data) = &event.discovery_data {
         if entity.topic_info.is_some() {
             // TODO: show warning
         }
@@ -81,7 +81,7 @@ fn handle_data_event(
             .entities
             .entry(discovery_data.writer_proxy.remote_writer_guid)
             .or_insert_with(EntityState::default);
-        entity.topic_info = Some(discovery_data);
+        entity.topic_info = Some(discovery_data.clone());
     }
 
     if let Some(otlp) = otlp_handle.as_ref() {
@@ -90,7 +90,7 @@ fn handle_data_event(
 }
 
 fn handle_data_frag_event(
-    event: DataFragEvent,
+    event: &DataFragEvent,
     state: &mut State,
     otlp_handle: Option<&otlp::TraceHandle>,
     otlp_message: RtpsMessage,
@@ -117,7 +117,7 @@ fn handle_data_frag_event(
             fragment_starting_num,
             fragments_in_submessage,
             ..
-        } = event;
+        } = *event;
 
         let start = fragment_starting_num as usize - 1;
         let end = start + fragments_in_submessage as usize;

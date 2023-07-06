@@ -207,9 +207,7 @@ impl PacketDecoder {
 
     /// Process a packet and dissect its IP header.
     /// Returns the IP header and the payload
-    pub fn dissect_ip_header<'a>(
-        packet_data: &'a [u8],
-    ) -> Result<(Ipv4Repr, &'a [u8]), &'static str> {
+    pub fn dissect_ip_header(packet_data: &[u8]) -> Result<(Ipv4Repr, &[u8]), &'static str> {
         let checksum_caps = ChecksumCapabilities::default();
 
         let ip_packet = Ipv4Packet::new_checked(packet_data)
@@ -246,7 +244,7 @@ impl PacketDecoder {
                 .fragments
                 .entry((src, dst, ident))
                 .or_insert_with(BTreeMap::new);
-            fragment_buffer.insert(ip_packet.frag_offset() as u16, fragment_data.to_vec());
+            fragment_buffer.insert(ip_packet.frag_offset(), fragment_data.to_vec());
 
             // Update the assembler
             let (received_length, total_length) =
@@ -312,9 +310,9 @@ impl PacketCodec for PacketDecoder {
 
         Some((
             PacketHeaders {
-                pcap_header: packet.header.clone(),
-                eth_header: eth_header,
-                vlan_header: vlan_header,
+                pcap_header: *packet.header,
+                eth_header,
+                vlan_header,
                 ipv4_header: ip_repr,
             },
             message,
