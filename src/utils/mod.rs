@@ -1,3 +1,6 @@
+mod defrag_buf;
+
+pub use defrag_buf::DefragBuf;
 use rustdds::GUID;
 use std::{
     fmt::{self, Display},

@@ -1,6 +1,7 @@
-use rust_lapper::Lapper;
 use rustdds::{discovery::data_types::topic_data::DiscoveredWriterData, SequenceNumber, GUID};
 use std::collections::HashMap;
+
+use crate::utils::DefragBuf;
 
 /// The TUI state.
 #[derive(Debug)]
@@ -38,14 +39,19 @@ impl Default for EntityState {
 #[derive(Debug)]
 pub struct FragmentedMessage {
     pub data_size: usize,
-    pub intervals: Lapper<usize, ()>,
+    pub num_fragments: usize,
+    pub recvd_fragments: usize,
+    pub free_intervals: DefragBuf,
 }
 
 impl FragmentedMessage {
-    pub fn new(data_size: usize) -> Self {
+    pub fn new(data_size: usize, fragment_size: usize) -> Self {
+        let num_fragments = (data_size + fragment_size - 1) / fragment_size;
         Self {
             data_size,
-            intervals: Lapper::new(vec![]),
+            num_fragments,
+            recvd_fragments: 0,
+            free_intervals: DefragBuf::new(num_fragments),
         }
     }
 }

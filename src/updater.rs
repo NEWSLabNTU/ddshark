@@ -4,9 +4,11 @@ use crate::{
     otlp,
     state::{EntityState, FragmentedMessage, State},
 };
-use rust_lapper::Interval;
-use std::sync::{Arc, Mutex};
-use tracing::error;
+use std::{
+    cmp,
+    sync::{Arc, Mutex},
+};
+use tracing::{error, warn};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 pub(crate) async fn run_updater(
@@ -100,32 +102,37 @@ fn handle_data_frag_event(
     let msg_state = entity
         .frag_messages
         .entry(event.writer_sn)
-        .or_insert_with(|| FragmentedMessage::new(event.data_size as usize));
+        .or_insert_with(|| {
+            FragmentedMessage::new(event.data_size as usize, event.fragment_size as usize)
+        });
 
-    if msg_state.data_size != event.data_size as usize {
-        todo!("Handle inconsistent data_size");
+    if event.data_size as usize != msg_state.data_size {
+        error!("event.data_size changes! Ignore this message.");
+        return;
     }
 
     // Compute the submessage payload range
-    let intervals = &mut msg_state.intervals;
     let interval = {
-        let start = (event.fragment_starting_num - 1) as usize * event.fragment_size as usize;
-        let stop = start + event.fragments_in_submessage as usize * event.fragment_size as usize;
-        Interval {
-            start,
-            stop,
-            val: (),
-        }
+        let DataFragEvent {
+            fragment_starting_num,
+            fragments_in_submessage,
+            ..
+        } = event;
+
+        let start = fragment_starting_num as usize - 1;
+        let end = start + fragments_in_submessage as usize;
+        start..end
     };
-    intervals.insert(interval);
-    intervals.merge_overlaps();
 
-    // Check if the message is finished.
-    let is_finished = matches!(&intervals.intervals[..],
-                               [int]
-                               if int.start == 0 && int.stop == msg_state.data_size);
+    let free_intervals = &mut msg_state.free_intervals;
+    if free_intervals.insert(interval).is_err() {
+        warn!("Overlapping fragments detected. Ignore this message");
+        return;
+    }
 
-    if is_finished {
+    msg_state.recvd_fragments += event.fragments_in_submessage as usize;
+
+    if free_intervals.is_full() {
         entity.frag_messages.remove(&event.writer_sn);
         entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
         entity.message_count += 1;
