@@ -1,11 +1,36 @@
 use etherparse::{Ethernet2Header, SingleVlanHeader};
-use rustdds::{discovery::data_types::topic_data::DiscoveredWriterData, SequenceNumber, GUID};
+use rustdds::{
+    dds::DiscoveredTopicData,
+    discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
+    SequenceNumber, GUID,
+};
 use smoltcp::wire::Ipv4Repr;
 
 #[derive(Debug, Clone)]
 pub enum RtpsEvent {
+    DiscoveredTopic(Box<DiscoveredTopicEvent>),
+    DiscoveredWriter(Box<DiscoveredWriterEvent>),
+    DiscoveredReader(Box<DiscoveredReaderEvent>),
     Data(Box<DataEvent>),
     DataFrag(Box<DataFragEvent>),
+}
+
+impl From<DiscoveredReaderEvent> for RtpsEvent {
+    fn from(v: DiscoveredReaderEvent) -> Self {
+        Self::DiscoveredReader(Box::new(v))
+    }
+}
+
+impl From<DiscoveredWriterEvent> for RtpsEvent {
+    fn from(v: DiscoveredWriterEvent) -> Self {
+        Self::DiscoveredWriter(Box::new(v))
+    }
+}
+
+impl From<DiscoveredTopicEvent> for RtpsEvent {
+    fn from(v: DiscoveredTopicEvent) -> Self {
+        Self::DiscoveredTopic(Box::new(v))
+    }
 }
 
 impl From<DataFragEvent> for RtpsEvent {
@@ -26,7 +51,6 @@ pub struct DataEvent {
     pub reader_id: GUID,
     pub writer_sn: SequenceNumber,
     pub payload_size: usize,
-    pub discovery_data: Option<DiscoveredWriterData>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,4 +77,19 @@ pub struct PacketHeaders {
 pub struct RtpsMessage {
     pub headers: PacketHeaders,
     pub event: RtpsEvent,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveredTopicEvent {
+    pub data: DiscoveredTopicData,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveredWriterEvent {
+    pub data: DiscoveredWriterData,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscoveredReaderEvent {
+    pub data: DiscoveredReaderData,
 }

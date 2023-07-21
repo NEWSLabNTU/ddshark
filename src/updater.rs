@@ -1,5 +1,8 @@
 use crate::{
-    message::{DataEvent, DataFragEvent, RtpsEvent, RtpsMessage},
+    message::{
+        DataEvent, DataFragEvent, DiscoveredReaderEvent, DiscoveredTopicEvent,
+        DiscoveredWriterEvent, RtpsEvent, RtpsMessage,
+    },
     opts::Opts,
     otlp,
     state::{EntityState, FragmentedMessage, State},
@@ -46,6 +49,30 @@ pub(crate) async fn run_updater(
             RtpsEvent::DataFrag(event) => {
                 handle_data_frag_event(&event, &mut state, otlp_handle.as_ref(), otlp_message);
             }
+            RtpsEvent::DiscoveredTopic(event) => {
+                handle_discovered_topic_event(
+                    &event,
+                    &mut state,
+                    otlp_handle.as_ref(),
+                    otlp_message,
+                );
+            }
+            RtpsEvent::DiscoveredWriter(event) => {
+                handle_discovered_writer_event(
+                    &event,
+                    &mut state,
+                    otlp_handle.as_ref(),
+                    otlp_message,
+                );
+            }
+            RtpsEvent::DiscoveredReader(event) => {
+                handle_discovered_reader_event(
+                    &event,
+                    &mut state,
+                    otlp_handle.as_ref(),
+                    otlp_message,
+                );
+            }
         }
     }
 }
@@ -63,30 +90,10 @@ fn handle_data_event(
     entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
     entity.message_count += 1;
 
-    let topic_name = match &entity.topic_info {
-        Some(info) => info.publication_topic_data.topic_name.clone(),
-        None => "<none>".to_string(),
-    };
-
-    // Update discovered data in state.entities
-    if let Some(discovery_data) = &event.discovery_data {
-        if entity.topic_info.is_some() {
-            // TODO: show warning
-        }
-
-        // Insert the discovery data into state.entities with remote_writer_guid,
-        // if it doesn't exist, then create a new entity corresponding to the remote_writer_guid.
-        // if it exists, then update the entity with the discovery data.
-        let entity = state
-            .entities
-            .entry(discovery_data.writer_proxy.remote_writer_guid)
-            .or_insert_with(EntityState::default);
-        entity.topic_info = Some(discovery_data.clone());
-    }
-
-    if let Some(otlp) = otlp_handle.as_ref() {
-        otlp.send_trace(&otlp_message, topic_name);
-    }
+    // let topic_name = entity.topic_name().unwrap_or("<none>").to_string();
+    // if let Some(otlp) = otlp_handle.as_ref() {
+    //     otlp.send_trace(&otlp_message, topic_name);
+    // }
 }
 
 fn handle_data_frag_event(
@@ -138,12 +145,62 @@ fn handle_data_frag_event(
         entity.message_count += 1;
     }
 
-    let topic_name = match &entity.topic_info {
-        Some(info) => info.publication_topic_data.topic_name.clone(),
-        None => "<none>".to_string(),
-    };
+    let topic_name = entity.topic_name().unwrap_or("<none>");
+    if let Some(otlp) = otlp_handle.as_ref() {
+        otlp.send_trace(&otlp_message, topic_name.to_string());
+    }
+}
+
+fn handle_discovered_topic_event(
+    event: &DiscoveredTopicEvent,
+    state: &mut State,
+    otlp_handle: Option<&otlp::TraceHandle>,
+    otlp_message: RtpsMessage,
+) {
+    // noop
+    // todo!();
+}
+
+fn handle_discovered_writer_event(
+    event: &DiscoveredWriterEvent,
+    state: &mut State,
+    otlp_handle: Option<&otlp::TraceHandle>,
+    otlp_message: RtpsMessage,
+) {
+    let entity = state
+        .entities
+        .entry(event.data.publication_topic_data.key)
+        .or_insert_with(EntityState::default);
+    // entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
+    entity.message_count += 1;
+
+    let topic_name = entity.topic_name().unwrap_or("<none>").to_string();
+
+    // Update discovered data in state.entities
+    if entity.topic_info.is_some() {
+        // TODO: show warning
+    }
+
+    // Insert the discovery data into state.entities with remote_writer_guid,
+    // if it doesn't exist, then create a new entity corresponding to the remote_writer_guid.
+    // if it exists, then update the entity with the discovery data.
+    let entity = state
+        .entities
+        .entry(event.data.writer_proxy.remote_writer_guid)
+        .or_insert_with(EntityState::default);
+    entity.topic_info = Some(event.data.clone());
 
     if let Some(otlp) = otlp_handle.as_ref() {
         otlp.send_trace(&otlp_message, topic_name);
     }
+}
+
+fn handle_discovered_reader_event(
+    event: &DiscoveredReaderEvent,
+    state: &mut State,
+    otlp_handle: Option<&otlp::TraceHandle>,
+    otlp_message: RtpsMessage,
+) {
+    // noop
+    // todo!();
 }

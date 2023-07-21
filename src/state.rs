@@ -7,12 +7,14 @@ use crate::utils::DefragBuf;
 #[derive(Debug)]
 pub(crate) struct State {
     pub entities: HashMap<GUID, EntityState>,
+    // pub topic_stat: HashMap<String, TopicStat>,
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
             entities: HashMap::new(),
+            // topic_stat: HashMap::new(),
         }
     }
 }
@@ -23,6 +25,12 @@ pub struct EntityState {
     pub last_sn: Option<SequenceNumber>,
     pub frag_messages: HashMap<SequenceNumber, FragmentedMessage>,
     pub message_count: usize,
+}
+
+impl EntityState {
+    pub fn topic_name(&self) -> Option<&str> {
+        Some(&self.topic_info.as_ref()?.publication_topic_data.topic_name)
+    }
 }
 
 impl Default for EntityState {
@@ -55,3 +63,6 @@ impl FragmentedMessage {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct TopicStat {}
