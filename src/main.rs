@@ -22,18 +22,17 @@ use ui::Tui;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
-    let opts_clone = opts.clone();
 
     let (tx, rx) = flume::bounded(8192);
     let state = Arc::new(Mutex::new(State::default()));
 
     let rpts_watcher_handle = {
-        let packet_src = match (opts.file, opts.interface) {
+        let packet_src = match (&opts.file, &opts.interface) {
             (Some(_), Some(_)) => {
                 bail!("--file and --interface cannot be specified simultaneously")
             }
-            (Some(file), None) => PacketSource::File(file),
-            (None, Some(interface)) => PacketSource::Interface(interface),
+            (Some(file), None) => PacketSource::File(file.clone()),
+            (None, Some(interface)) => PacketSource::Interface(interface.clone()),
             (None, None) => PacketSource::Default,
         };
 
@@ -43,8 +42,11 @@ fn main() -> Result<()> {
     // Start state updater
     let updater_handle = {
         let state = state.clone();
-        thread::spawn(|| {
-            crate::updater::run_updater(rx, state, opts_clone);
+        let opts = opts.clone();
+
+        thread::spawn(move || {
+            let updater = crate::updater::Updater::new(rx, state, &opts);
+            updater.run();
         })
     };
 
