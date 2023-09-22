@@ -1,11 +1,10 @@
+use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
     discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
     structure::guid::{EntityId, GuidPrefix},
     SequenceNumber,
 };
 use std::collections::HashMap;
-
-use crate::utils::DefragBuf;
 
 /// The TUI state.
 #[derive(Debug)]

@@ -1,6 +1,3 @@
-mod defrag_buf;
-
-pub use defrag_buf::DefragBuf;
 use rustdds::{
     structure::guid::{EntityId, EntityKind, GuidPrefix},
     GUID,
