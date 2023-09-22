@@ -1,12 +1,15 @@
 use super::PacketSource;
-use crate::message::{
-    DataEvent, DataFragEvent, DiscoveredReaderEvent, DiscoveredTopicEvent, DiscoveredWriterEvent,
-    RtpsEvent, RtpsMessage,
+use crate::{
+    message::{DataEvent, DataFragEvent, RtpsEvent, RtpsMessage},
+    utils::EntityIdExt,
 };
 use anyhow::Result;
 use rustdds::{
     dds::{traits::serde_adapters::no_key::DeserializerAdapter, DiscoveredTopicData},
-    discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
+    discovery::data_types::{
+        spdp_participant_data::SpdpDiscoveredParticipantData,
+        topic_data::{DiscoveredReaderData, DiscoveredWriterData},
+    },
     messages::submessages::{
         submessage_elements::serialized_payload::SerializedPayload,
         submessages::{Data, DataFrag, EntitySubmessage, InterpreterSubmessage},
@@ -19,8 +22,7 @@ use rustdds::{
     GUID,
 };
 use serde::Deserialize;
-use tracing::warn;
-
+use tracing::{error, warn};
 pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Result<()> {
     let iter = source.into_message_iter()?;
 
@@ -56,7 +58,10 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => match emsg {
             EntitySubmessage::AckNack(_, _) => None,
-            EntitySubmessage::Data(data, _) => handle_submsg_data(msg, submsg, data),
+            EntitySubmessage::Data(data, _) => {
+                let event = handle_submsg_data(msg, submsg, data);
+                Some(event)
+            }
             EntitySubmessage::DataFrag(data, _) => {
                 let event = handle_submsg_datafrag(msg, submsg, data);
                 Some(event)
@@ -75,80 +80,97 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
     }
 }
 
-fn handle_submsg_data(msg: &Message, submsg: &SubMessage, data: &Data) -> Option<RtpsEvent> {
+fn handle_submsg_data(msg: &Message, _submsg: &SubMessage, data: &Data) -> RtpsEvent {
     let guid_prefix = msg.header.guid_prefix;
 
     let Data {
         reader_id,
         writer_id,
         writer_sn,
-        ref inline_qos,
+        inline_qos: _,
         ref serialized_payload,
     } = *data;
 
-    let event = match writer_id {
-        EntityId::SEDP_BUILTIN_TOPIC_WRITER => {
-            let data: DiscoveredTopicData =
-                deserialize_payload(serialized_payload.as_ref()?).ok()?;
-            DiscoveredTopicEvent { data }.into()
-        }
-        EntityId::SEDP_BUILTIN_TOPIC_READER => {
-            let data: DiscoveredTopicData =
-                deserialize_payload(serialized_payload.as_ref()?).ok()?;
-            DiscoveredTopicEvent { data }.into()
-        }
-        EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER => {
-            let data: DiscoveredWriterData =
-                deserialize_payload(serialized_payload.as_ref()?).ok()?;
-            DiscoveredWriterEvent { data }.into()
-        }
-        EntityId::SEDP_BUILTIN_PUBLICATIONS_READER => {
-            let data: DiscoveredWriterData =
-                deserialize_payload(serialized_payload.as_ref()?).ok()?;
-            DiscoveredWriterEvent { data }.into()
-        }
-        EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER => {
-            let data: DiscoveredReaderData =
-                deserialize_payload(serialized_payload.as_ref()?).ok()?;
-            DiscoveredReaderEvent { data }.into()
-        }
-        EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_READER => {
-            let data: DiscoveredReaderData =
-                deserialize_payload(serialized_payload.as_ref()?).ok()?;
-            DiscoveredReaderEvent { data }.into()
-        }
-        EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER => {
-            return None;
-        }
-        EntityId::SPDP_BUILTIN_PARTICIPANT_READER => {
-            return None;
-        }
-        EntityId::P2P_BUILTIN_PARTICIPANT_MESSAGE_WRITER => {
-            return None;
-        }
-        EntityId::P2P_BUILTIN_PARTICIPANT_MESSAGE_READER => {
-            return None;
-        }
-        _ => {
-            let payload_size = match serialized_payload {
-                Some(payload) => payload.value.len(),
-                None => 0,
-            };
-
-            DataEvent {
-                writer_id: GUID::new(guid_prefix, writer_id),
-                reader_id: GUID::new(guid_prefix, reader_id),
-                writer_sn,
-                payload_size,
-            }
-            .into()
-        }
+    let payload_size = match serialized_payload {
+        Some(payload) => payload.value.len(),
+        None => 0,
     };
 
-    Some(event)
+    let payload = (|| {
+        macro_rules! bail {
+            () => {
+                error!(
+                    "payload deserialization is not implemented for {}",
+                    writer_id.display()
+                );
+                return None;
+            };
+        }
+        let serialized_payload = serialized_payload.as_ref();
+
+        let payload = match writer_id {
+            EntityId::SEDP_BUILTIN_TOPIC_WRITER => {
+                let data: DiscoveredTopicData = deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::SEDP_BUILTIN_TOPIC_READER => {
+                let data: DiscoveredTopicData = deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER => {
+                let data: DiscoveredWriterData =
+                    deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::SEDP_BUILTIN_PUBLICATIONS_READER => {
+                let data: DiscoveredWriterData =
+                    deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER => {
+                let data: DiscoveredReaderData =
+                    deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_READER => {
+                let data: DiscoveredReaderData =
+                    deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER => {
+                let data: SpdpDiscoveredParticipantData =
+                    deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+
+            EntityId::SPDP_BUILTIN_PARTICIPANT_READER => {
+                let data: SpdpDiscoveredParticipantData =
+                    deserialize_payload(writer_id, serialized_payload)?;
+                data.into()
+            }
+            EntityId::P2P_BUILTIN_PARTICIPANT_MESSAGE_WRITER => {
+                bail!();
+            }
+            EntityId::P2P_BUILTIN_PARTICIPANT_MESSAGE_READER => {
+                bail!();
+            }
+            _ => return None,
+        };
+
+        Some(payload)
+    })();
+
+    DataEvent {
+        writer_id: GUID::new(guid_prefix, writer_id),
+        reader_id: GUID::new(guid_prefix, reader_id),
+        writer_sn,
+        payload_size,
+        payload,
+    }
+    .into()
 }
 
-fn handle_submsg_datafrag(msg: &Message, submsg: &SubMessage, data: &DataFrag) -> RtpsEvent {
+fn handle_submsg_datafrag(msg: &Message, _submsg: &SubMessage, data: &DataFrag) -> RtpsEvent {
     let guid_prefix = msg.header.guid_prefix;
 
     let DataFrag {
@@ -159,7 +181,7 @@ fn handle_submsg_datafrag(msg: &Message, submsg: &SubMessage, data: &DataFrag) -
         fragments_in_submessage,
         data_size,
         fragment_size,
-        ref inline_qos,
+        inline_qos: _,
         ref serialized_payload,
     } = *data;
     let payload_size = serialized_payload.len();
@@ -177,11 +199,27 @@ fn handle_submsg_datafrag(msg: &Message, submsg: &SubMessage, data: &DataFrag) -
     .into()
 }
 
-fn deserialize_payload<T>(
-    payload: &SerializedPayload,
-) -> Result<T, rustdds::serialization::error::Error>
+fn deserialize_payload<T>(entity_id: EntityId, payload: Option<&SerializedPayload>) -> Option<T>
 where
     T: for<'de> Deserialize<'de> + PlCdrDeserialize,
 {
-    PlCdrDeserializerAdapter::from_bytes(payload.value.as_ref(), payload.representation_identifier)
+    let Some(payload) = payload else {
+        error!("no payload found for entity {}", entity_id.display());
+        return None;
+    };
+    let result = PlCdrDeserializerAdapter::from_bytes(
+        payload.value.as_ref(),
+        payload.representation_identifier,
+    );
+    let data = match result {
+        Ok(data) => data,
+        Err(err) => {
+            error!(
+                "fail to parse payload for entity {}: {err}",
+                entity_id.display()
+            );
+            return None;
+        }
+    };
+    Some(data)
 }

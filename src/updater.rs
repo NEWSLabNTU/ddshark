@@ -1,17 +1,11 @@
 use crate::{
-    message::{
-        DataEvent, DataFragEvent, DiscoveredReaderEvent, DiscoveredTopicEvent,
-        DiscoveredWriterEvent, RtpsEvent, RtpsMessage,
-    },
+    message::{DataEvent, DataFragEvent, DataPayload, RtpsEvent, RtpsMessage},
     opts::Opts,
     otlp,
-    state::{EntityState, FragmentedMessage, State},
+    state::{EntityReaderContext, EntityWriterContext, FragmentedMessage, State},
 };
-use std::{
-    cmp,
-    sync::{Arc, Mutex},
-};
-use tracing::{error, info, warn};
+use std::sync::{Arc, Mutex};
+use tracing::{error, warn};
 
 pub struct Updater {
     rx: flume::Receiver<RtpsMessage>,
@@ -38,8 +32,7 @@ impl Updater {
         }
     }
 
-    #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-    pub(crate) async fn run(self) {
+    pub(crate) fn run(self) {
         // Consume event messages from rx.
         loop {
             use flume::RecvError as E;
@@ -63,30 +56,80 @@ impl Updater {
                 RtpsEvent::DataFrag(event) => {
                     self.handle_data_frag_event(&mut state, &message, event);
                 }
-                RtpsEvent::DiscoveredTopic(event) => {
-                    self.handle_discovered_topic_event(&mut state, &message, event);
-                }
-                RtpsEvent::DiscoveredWriter(event) => {
-                    self.handle_discovered_writer_event(&mut state, &message, event);
-                }
-                RtpsEvent::DiscoveredReader(event) => {
-                    self.handle_discovered_reader_event(&mut state, &message, event);
-                }
             }
         }
     }
 
     fn handle_data_event(&self, state: &mut State, message: &RtpsMessage, event: &DataEvent) {
-        let entity = state
+        let participant = state
+            .participants
+            .entry(event.writer_id.prefix)
+            .or_default();
+        let entity = participant
             .entities
-            .entry(event.writer_id)
-            .or_insert_with(EntityState::default);
-        entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
+            .entry(event.writer_id.entity_id)
+            .or_default();
+
+        entity.last_sn = Some(event.writer_sn.clone());
         entity.message_count += 1;
 
-        let topic_name = entity.topic_name().unwrap_or("<none>").to_string();
-        if let Some(otlp) = &self.otlp_handle {
-            otlp.send_trace(message, topic_name);
+        if let Some(payload) = &event.payload {
+            match payload {
+                DataPayload::DiscoveredTopic(data) => {
+                    error!("DiscoveredTopic not yet implemented");
+                    // TODO
+                }
+                DataPayload::DiscoveredWriter(data) => {
+                    let remote_writer_guid = data.writer_proxy.remote_writer_guid;
+
+                    let participant = state
+                        .participants
+                        .entry(remote_writer_guid.prefix)
+                        .or_default();
+
+                    let entity = participant
+                        .entities
+                        .entry(remote_writer_guid.entity_id)
+                        .or_default();
+
+                    // Update discovered data in state.entities
+                    if !entity.context.is_unknown() {
+                        // TODO: show warning
+                    }
+
+                    entity.context = EntityWriterContext {
+                        data: (**data).clone(),
+                    }
+                    .into();
+                }
+                DataPayload::DiscoveredReader(data) => {
+                    let remote_reader_guid = data.reader_proxy.remote_reader_guid;
+
+                    let participant = state
+                        .participants
+                        .entry(remote_reader_guid.prefix)
+                        .or_default();
+
+                    let entity = participant
+                        .entities
+                        .entry(remote_reader_guid.entity_id)
+                        .or_default();
+
+                    // Update discovered data in state.entities
+                    if !entity.context.is_unknown() {
+                        // TODO: show warning
+                    }
+
+                    entity.context = EntityReaderContext {
+                        data: (**data).clone(),
+                    }
+                    .into();
+                }
+                DataPayload::DiscoveredParticipant(data) => {
+                    error!("DiscoveredParticipant not yet implemented");
+                    // TODO
+                }
+            }
         }
     }
 
@@ -96,12 +139,15 @@ impl Updater {
         message: &RtpsMessage,
         event: &DataFragEvent,
     ) {
-        println!("[data_frag]");
-
-        let entity = state
+        let participant = state
+            .participants
+            .entry(event.writer_id.prefix)
+            .or_default();
+        let entity = participant
             .entities
-            .entry(event.writer_id)
-            .or_insert_with(EntityState::default);
+            .entry(event.writer_id.entity_id)
+            .or_default();
+
         let msg_state = entity
             .frag_messages
             .entry(event.writer_sn)
@@ -137,71 +183,8 @@ impl Updater {
 
         if free_intervals.is_full() {
             entity.frag_messages.remove(&event.writer_sn);
-            entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
+            entity.last_sn = Some(event.writer_sn);
             entity.message_count += 1;
         }
-
-        let topic_name = entity.topic_name().unwrap_or("<none>");
-        if let Some(otlp) = &self.otlp_handle {
-            otlp.send_trace(message, topic_name.to_string());
-        }
-    }
-
-    fn handle_discovered_topic_event(
-        &self,
-        state: &mut State,
-        message: &RtpsMessage,
-        event: &DiscoveredTopicEvent,
-    ) {
-        println!("[discovered_topic]");
-        // noop
-        // todo!();
-    }
-
-    fn handle_discovered_writer_event(
-        &self,
-        state: &mut State,
-        message: &RtpsMessage,
-        event: &DiscoveredWriterEvent,
-    ) {
-        println!("[discovered_writer]");
-
-        let entity = state
-            .entities
-            .entry(event.data.publication_topic_data.key)
-            .or_insert_with(EntityState::default);
-        // entity.last_sn = cmp::max(entity.last_sn, Some(event.writer_sn));
-        entity.message_count += 1;
-
-        let topic_name = entity.topic_name().unwrap_or("<none>").to_string();
-
-        // Update discovered data in state.entities
-        if entity.topic_info.is_some() {
-            // TODO: show warning
-        }
-
-        // Insert the discovery data into state.entities with remote_writer_guid,
-        // if it doesn't exist, then create a new entity corresponding to the remote_writer_guid.
-        // if it exists, then update the entity with the discovery data.
-        let entity = state
-            .entities
-            .entry(event.data.writer_proxy.remote_writer_guid)
-            .or_insert_with(EntityState::default);
-        entity.topic_info = Some(event.data.clone());
-
-        if let Some(otlp) = &self.otlp_handle {
-            otlp.send_trace(message, topic_name);
-        }
-    }
-
-    fn handle_discovered_reader_event(
-        &self,
-        state: &mut State,
-        message: &RtpsMessage,
-        event: &DiscoveredReaderEvent,
-    ) {
-        println!("[discovered_reader]");
-        // noop
-        // todo!();
     }
 }

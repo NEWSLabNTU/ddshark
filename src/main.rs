@@ -3,11 +3,11 @@ mod opts;
 mod otlp;
 mod rtps;
 mod state;
-mod ui;
 mod updater;
 mod utils;
 // mod qos;
 // mod dds;
+// mod ui;
 
 use crate::{opts::Opts, state::State};
 use anyhow::{bail, Result};
@@ -16,11 +16,12 @@ use rtps::PacketSource;
 use std::{
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
 };
-use ui::Tui;
+// use ui::Tui;
 
 fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+
     let opts = Opts::parse();
 
     let (tx, rx) = flume::bounded(8192);
@@ -51,11 +52,11 @@ fn main() -> Result<()> {
     };
 
     // Run TUI
-    if !opts.no_tui {
-        let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
-        let tui = Tui::new(tick_dur, state);
-        tui.run()?;
-    }
+    // if !opts.no_tui {
+    //     let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
+    //     let tui = Tui::new(tick_dur, state);
+    //     tui.run()?;
+    // }
 
     // Finalize
     rpts_watcher_handle.join().unwrap()?;

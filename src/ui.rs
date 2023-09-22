@@ -1,6 +1,6 @@
 use crate::{
-    state::{EntityState, State},
-    utils::{num_base10_digits_i64, num_base10_digits_usize, GUIDExt},
+    state::{ParticipantState, State},
+    utils::{num_base10_digits_i64, num_base10_digits_usize, GUIDExt, GuidPrefixExt},
 };
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -162,7 +162,7 @@ impl Tui {
                 const TITLE_MESSAGE_COUNT: &str = "msg count";
                 const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "# frag msgs";
 
-                let mut entities: Vec<_> = state.entities.iter().collect();
+                let mut entities: Vec<_> = state.participants.iter().collect();
                 entities.sort_by_cached_key(|(guid, entity)| {
                     let topic_name = entity
                         .topic_info
@@ -174,7 +174,7 @@ impl Tui {
                 let rows: Vec<_> = entities
                     .iter()
                     .map(|(guid, entity)| {
-                        let EntityState {
+                        let ParticipantState {
                             ref topic_info,
                             last_sn,
                             message_count,
@@ -201,7 +201,7 @@ impl Tui {
                     .collect();
 
                 let topic_col_len = state
-                    .entities
+                    .participants
                     .values()
                     .map(|entity| {
                         let Some(info) = entity.topic_info.as_ref() else {
@@ -213,7 +213,7 @@ impl Tui {
                     .unwrap_or(0)
                     .max(TITLE_TOPIC.len());
                 let sn_col_len = state
-                    .entities
+                    .participants
                     .values()
                     .map(|entity| {
                         let Some(last_sn) = entity.last_sn else {
@@ -225,14 +225,14 @@ impl Tui {
                     .unwrap_or(0)
                     .max(TITLE_SERIAL_NUMBER.len());
                 let msg_count_col_len = state
-                    .entities
+                    .participants
                     .values()
                     .map(|entity| num_base10_digits_usize(entity.message_count) as usize)
                     .max()
                     .unwrap_or(0)
                     .max(TITLE_MESSAGE_COUNT.len());
                 let num_frag_msgs_col_len = state
-                    .entities
+                    .participants
                     .values()
                     .map(|entity| num_base10_digits_usize(entity.frag_messages.len()) as usize)
                     .max()
@@ -271,7 +271,7 @@ impl Tui {
                 const TITLE_NUM_WRITERS: &str = "# writers";
 
                 let mut topics: Vec<_> = state
-                    .entities
+                    .participants
                     .iter()
                     .filter_map(|(_, entity)| {
                         let info = entity.topic_info.as_ref()?;
