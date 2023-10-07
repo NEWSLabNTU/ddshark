@@ -1,6 +1,7 @@
 use crate::{
     message::{
-        DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent, RtpsEvent, RtpsMessage,
+        AckNackEvent, DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent,
+        HeartbeatFragEvent, NackFragEvent, RtpsEvent, RtpsMessage,
     },
     opts::Opts,
     otlp,
@@ -71,6 +72,15 @@ impl Updater {
                 }
                 RtpsEvent::Heartbeat(event) => {
                     self.handle_heartbeat_event(&mut state, &message, event);
+                }
+                RtpsEvent::AckNack(event) => {
+                    self.handle_ack_nack_event(&mut state, &message, event);
+                }
+                RtpsEvent::NackFrag(event) => {
+                    self.handle_nack_frag_event(&mut state, &message, event);
+                }
+                RtpsEvent::HeartbeatFrag(event) => {
+                    self.handle_heartbeat_frag_event(&mut state, &message, event);
                 }
             }
         }
@@ -352,5 +362,29 @@ impl Updater {
                 since: Instant::now(),
             });
         }
+    }
+
+    fn handle_ack_nack_event(
+        &self,
+        state: &mut State,
+        _message: &RtpsMessage,
+        event: &AckNackEvent,
+    ) {
+    }
+
+    fn handle_nack_frag_event(
+        &self,
+        state: &mut State,
+        _message: &RtpsMessage,
+        event: &NackFragEvent,
+    ) {
+    }
+
+    fn handle_heartbeat_frag_event(
+        &self,
+        state: &mut State,
+        _message: &RtpsMessage,
+        event: &HeartbeatFragEvent,
+    ) {
     }
 }

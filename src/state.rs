@@ -1,8 +1,6 @@
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
-    discovery::data_types::topic_data::{
-        DiscoveredReaderData, DiscoveredWriterData, PublicationBuiltinTopicData,
-    },
+    discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
     structure::guid::{EntityId, GuidPrefix},
     SequenceNumber, GUID,
 };

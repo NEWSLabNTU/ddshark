@@ -1,6 +1,9 @@
 use super::PacketSource;
 use crate::{
-    message::{DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, RtpsEvent, RtpsMessage},
+    message::{
+        AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
+        NackFragEvent, RtpsEvent, RtpsMessage,
+    },
     utils::EntityIdExt,
 };
 use anyhow::Result;
@@ -66,9 +69,8 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => match emsg {
             EntitySubmessage::AckNack(data, _) => {
-                let _event = handle_submsg_ack_nack(msg, submsg, data);
-                // Some(event)
-                None
+                let event = handle_submsg_ack_nack(msg, submsg, data);
+                Some(event)
             }
             EntitySubmessage::Data(data, _) => {
                 let event = handle_submsg_data(msg, submsg, data);
@@ -83,19 +85,16 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
                 Some(event)
             }
             EntitySubmessage::Heartbeat(data, _) => {
-                let _event = handle_submsg_heartbeat(msg, submsg, data);
-                // Some(event)
-                None
+                let event = handle_submsg_heartbeat(msg, submsg, data);
+                Some(event)
             }
             EntitySubmessage::HeartbeatFrag(data, _) => {
-                let _event = handle_submsg_heartbeat_frag(msg, submsg, data);
-                // Some(event)
-                None
+                let event = handle_submsg_heartbeat_frag(msg, submsg, data);
+                Some(event)
             }
             EntitySubmessage::NackFrag(data, _) => {
-                let _event = handle_submsg_nack_frag(msg, submsg, data);
-                // Some(event)
-                None
+                let event = handle_submsg_nack_frag(msg, submsg, data);
+                Some(event)
             }
         },
         SubmessageBody::Interpreter(imsg) => match *imsg {
@@ -268,7 +267,7 @@ fn handle_submsg_gap(msg: &Message, _submsg: &SubMessage, data: &Gap) -> RtpsEve
     .into()
 }
 
-fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> () {
+fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> RtpsEvent {
     let guid_prefix = msg.header.guid_prefix;
     let NackFrag {
         reader_id,
@@ -281,6 +280,14 @@ fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag)
     let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!("nack {}\t{fragment_number_state:?}", writer_id.display());
+
+    NackFragEvent {
+        writer_id,
+        reader_id,
+        writer_sn,
+        count,
+    }
+    .into()
 }
 
 fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat) -> RtpsEvent {
@@ -305,25 +312,37 @@ fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat
     .into()
 }
 
-fn handle_submsg_heartbeat_frag(msg: &Message, _submsg: &SubMessage, data: &HeartbeatFrag) {
+fn handle_submsg_heartbeat_frag(
+    msg: &Message,
+    _submsg: &SubMessage,
+    data: &HeartbeatFrag,
+) -> RtpsEvent {
     let guid_prefix = msg.header.guid_prefix;
     let HeartbeatFrag {
         reader_id,
         writer_id,
         writer_sn,
-        last_fragment_num: FragmentNumber(last_fragment_num),
+        last_fragment_num,
         count,
     } = *data;
     let writer_id = GUID::new(guid_prefix, writer_id);
-    let reader_id = GUID::new(guid_prefix, reader_id);
+    // let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!(
     //     "heartbeat_frag {}\t{last_fragment_num}",
     //     writer_id.display()
     // );
+
+    HeartbeatFragEvent {
+        writer_id,
+        writer_sn,
+        last_fragment_num,
+        count,
+    }
+    .into()
 }
 
-fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) {
+fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -> RtpsEvent {
     let guid_prefix = msg.header.guid_prefix;
     let AckNack {
         reader_id,
@@ -335,6 +354,13 @@ fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) {
     let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!("ack_nack {}\t{reader_sn_state:?}", writer_id.display());
+
+    AckNackEvent {
+        writer_id,
+        reader_id,
+        count,
+    }
+    .into()
 }
 
 fn deserialize_payload<T>(entity_id: EntityId, payload: Option<&SerializedPayload>) -> Option<T>

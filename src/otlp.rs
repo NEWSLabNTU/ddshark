@@ -93,6 +93,9 @@ impl TraceHandle {
             ),
             RtpsEvent::Gap(_) => todo!(),
             RtpsEvent::Heartbeat(_) => todo!(),
+            RtpsEvent::AckNack(_) => todo!(),
+            RtpsEvent::NackFrag(_) => todo!(),
+            RtpsEvent::HeartbeatFrag(_) => todo!(),
         };
         let traffic_type = match writer_id.entity_id.entity_kind {
             // TODO: add complete cases
