@@ -1,15 +1,20 @@
 use crate::{
-    message::{DataEvent, DataFragEvent, DataPayload, GapEvent, RtpsEvent, RtpsMessage},
+    message::{
+        DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent, RtpsEvent, RtpsMessage,
+    },
     opts::Opts,
     otlp,
     state::{
-        EntityReaderContext, EntityWriterContext, FragmentInterval, FragmentedMessage, State,
+        EntityReaderContext, EntityWriterContext, FragmentedMessage, HeartbeatState, State,
         TopicState,
     },
-    utils::{GUIDExt, GuidPrefixExt},
 };
 use itertools::chain;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashSet,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 use tracing::{debug, error, warn};
 
 pub struct Updater {
@@ -64,6 +69,9 @@ impl Updater {
                 RtpsEvent::Gap(event) => {
                     self.handle_gap_event(&mut state, &message, event);
                 }
+                RtpsEvent::Heartbeat(event) => {
+                    self.handle_heartbeat_event(&mut state, &message, event);
+                }
             }
         }
     }
@@ -100,6 +108,8 @@ impl Updater {
                 }
                 DataPayload::DiscoveredWriter(data) => {
                     let remote_writer_guid = data.writer_proxy.remote_writer_guid;
+                    // TODO: Find the correct writer
+                    assert_eq!(event.writer_id.prefix, remote_writer_guid.prefix);
 
                     let participant = state
                         .participants
@@ -111,31 +121,36 @@ impl Updater {
                         .or_default();
 
                     // Update discovered data in state.entities
-                    if !entity.context.is_unknown() {
-                        // TODO: show warning
+                    {
+                        if !entity.context.is_unknown() {
+                            // TODO: show warning
+                        }
+
+                        entity.context = EntityWriterContext {
+                            data: (**data).clone(),
+                        }
+                        .into();
                     }
 
-                    entity.context = EntityWriterContext {
-                        data: (**data).clone(),
+                    // Update stats on associated topic
+                    {
+                        let topic_name = data.publication_topic_data.topic_name.clone();
+                        let topic_state =
+                            state
+                                .topics
+                                .entry(topic_name.clone())
+                                .or_insert_with(|| TopicState {
+                                    readers: HashSet::new(),
+                                    writers: HashSet::new(),
+                                });
+                        topic_state.writers.insert(remote_writer_guid);
+                        entity.topic_name = Some(topic_name);
                     }
-                    .into();
-
-                    let topic_state = state
-                        .topics
-                        .entry(data.publication_topic_data.topic_name.clone())
-                        .or_insert_with(|| {
-                            Arc::new(TopicState {
-                                data: data.publication_topic_data.clone(),
-                            })
-                        });
-
-                    // TODO: Find the correct writer
-                    assert_eq!(event.writer_id.prefix, remote_writer_guid.prefix);
-
-                    entity.topic = Arc::downgrade(topic_state);
                 }
                 DataPayload::DiscoveredReader(data) => {
                     let remote_reader_guid = data.reader_proxy.remote_reader_guid;
+                    // TODO: Find the correct writer
+                    assert_eq!(event.reader_id.prefix, remote_reader_guid.prefix);
 
                     let participant = state
                         .participants
@@ -148,14 +163,31 @@ impl Updater {
                         .or_default();
 
                     // Update discovered data in state.entities
-                    if !entity.context.is_unknown() {
-                        // TODO: show warning
+                    {
+                        if !entity.context.is_unknown() {
+                            // TODO: show warning
+                        }
+
+                        entity.context = EntityReaderContext {
+                            data: (**data).clone(),
+                        }
+                        .into();
                     }
 
-                    entity.context = EntityReaderContext {
-                        data: (**data).clone(),
+                    // Update stats on associated topic
+                    {
+                        let topic_name = data.subscription_topic_data.topic_name().clone();
+                        let topic_state =
+                            state
+                                .topics
+                                .entry(topic_name.clone())
+                                .or_insert_with(|| TopicState {
+                                    readers: HashSet::new(),
+                                    writers: HashSet::new(),
+                                });
+                        topic_state.readers.insert(remote_reader_guid);
+                        entity.topic_name = Some(topic_name);
                     }
-                    .into();
                 }
                 DataPayload::DiscoveredParticipant(data) => {
                     debug!("DiscoveredParticipant not yet implemented");
@@ -263,9 +295,9 @@ impl Updater {
     fn handle_gap_event(&self, state: &mut State, _message: &RtpsMessage, event: &GapEvent) {
         let GapEvent {
             writer_id,
-            reader_id,
             gap_start,
             ref gap_list,
+            ..
         } = *event;
 
         let participant = state.participants.entry(writer_id.prefix).or_default();
@@ -278,5 +310,47 @@ impl Updater {
 
         // gap_list.iter();
         // todo!();
+    }
+
+    fn handle_heartbeat_event(
+        &self,
+        state: &mut State,
+        _message: &RtpsMessage,
+        event: &HeartbeatEvent,
+    ) {
+        let participant = state
+            .participants
+            .entry(event.writer_id.prefix)
+            .or_default();
+        let entity = participant
+            .entities
+            .entry(event.writer_id.entity_id)
+            .or_default();
+
+        if let Some(heartbeat) = &mut entity.heartbeat {
+            if heartbeat.count < event.count {
+                if heartbeat.first_sn > event.first_sn.0 {
+                    // TODO: warn
+                }
+
+                if heartbeat.last_sn > event.last_sn.0 {
+                    // TODO: warn
+                }
+
+                *heartbeat = HeartbeatState {
+                    first_sn: event.first_sn.0,
+                    last_sn: event.last_sn.0,
+                    count: event.count,
+                    since: Instant::now(),
+                };
+            }
+        } else {
+            entity.heartbeat = Some(HeartbeatState {
+                first_sn: event.first_sn.0,
+                last_sn: event.first_sn.0,
+                count: event.count,
+                since: Instant::now(),
+            });
+        }
     }
 }

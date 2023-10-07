@@ -137,10 +137,10 @@ impl<'a> Display for EntityKindDisplay<'a> {
     }
 }
 
-pub fn num_base10_digits_usize(val: usize) -> u32 {
-    val.checked_ilog10().unwrap_or(0) + 1
-}
+// pub fn num_base10_digits_usize(val: usize) -> u32 {
+//     val.checked_ilog10().unwrap_or(0) + 1
+// }
 
-pub fn num_base10_digits_i64(val: i64) -> u32 {
-    val.checked_ilog10().unwrap_or(0) + 1
-}
+// pub fn num_base10_digits_i64(val: i64) -> u32 {
+//     val.checked_ilog10().unwrap_or(0) + 1
+// }

@@ -7,9 +7,8 @@ use rustdds::{
     SequenceNumber, GUID,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::Range,
-    sync::{Arc, Weak},
     time::Instant,
 };
 
@@ -17,7 +16,7 @@ use std::{
 #[derive(Debug)]
 pub(crate) struct State {
     pub participants: HashMap<GuidPrefix, ParticipantState>,
-    pub topics: HashMap<String, Arc<TopicState>>,
+    pub topics: HashMap<String, TopicState>,
 }
 
 impl State {
@@ -61,7 +60,8 @@ pub struct EntityState {
     pub message_count: usize,
     pub recv_count: usize,
     pub since: Instant,
-    pub topic: Weak<TopicState>,
+    pub topic_name: Option<String>,
+    pub heartbeat: Option<HeartbeatState>,
 }
 
 impl EntityState {
@@ -90,7 +90,8 @@ impl Default for EntityState {
             message_count: 0,
             recv_count: 0,
             since: Instant::now(),
-            topic: Weak::new(),
+            topic_name: None,
+            heartbeat: None,
         }
     }
 }
@@ -136,13 +137,8 @@ pub struct EntityReaderContext {
 
 #[derive(Debug)]
 pub struct TopicState {
-    pub data: PublicationBuiltinTopicData,
-}
-
-impl TopicState {
-    pub fn topic_name(&self) -> &str {
-        &self.data.topic_name
-    }
+    pub readers: HashSet<GUID>,
+    pub writers: HashSet<GUID>,
 }
 
 #[derive(Debug)]
@@ -172,4 +168,12 @@ impl FragmentedMessage {
 pub struct FragmentInterval {
     pub range: Range<usize>,
     pub payload_hash: u64,
+}
+
+#[derive(Debug)]
+pub struct HeartbeatState {
+    pub first_sn: i64,
+    pub last_sn: i64,
+    pub count: i32,
+    pub since: Instant,
 }

@@ -1,23 +1,23 @@
 use crate::{
-    state::{ParticipantState, State},
-    utils::{num_base10_digits_i64, num_base10_digits_usize, GUIDExt, GuidPrefixExt},
+    state::{EntityState, State},
+    utils::GUIDExt,
 };
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use itertools::Itertools;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
+    prelude::Rect,
     style::{Color, Modifier, Style},
     symbols::DOT,
     widgets::{Block, Borders, Row, Table, TableState, Tabs},
     Frame, Terminal,
 };
+use rustdds::GUID;
 use std::{
-    cmp::Reverse,
     io,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -132,8 +132,6 @@ impl Tui {
     }
 
     fn draw_ui<B: Backend>(&mut self, frame: &mut Frame<B>, elapsed_time: Duration) {
-        const NONE_TEXT: &str = "<none>";
-
         let Ok(state) = self.state.lock() else {
             // TODO: show error
             error!("Mutex is poisoned");
@@ -156,152 +154,10 @@ impl Tui {
 
         match self.tab_index {
             0 => {
-                const TITLE_GUID: &str = "GUID";
-                const TITLE_TOPIC: &str = "topic";
-                const TITLE_SERIAL_NUMBER: &str = "sn";
-                const TITLE_MESSAGE_COUNT: &str = "msg count";
-                const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "# frag msgs";
-
-                let mut entities: Vec<_> = state.participants.iter().collect();
-                entities.sort_by_cached_key(|(guid, entity)| {
-                    let topic_name = entity
-                        .topic_info
-                        .as_ref()
-                        .map(|info| info.publication_topic_data.topic_name.to_string());
-                    (Reverse(topic_name), *guid)
-                });
-
-                let rows: Vec<_> = entities
-                    .iter()
-                    .map(|(guid, entity)| {
-                        let ParticipantState {
-                            ref topic_info,
-                            last_sn,
-                            message_count,
-                            ref frag_messages,
-                            ..
-                        } = *entity;
-
-                        let topic_name = topic_info
-                            .as_ref()
-                            .map(|topic_info| topic_info.publication_topic_data.topic_name.as_str())
-                            .unwrap_or(NONE_TEXT);
-                        let last_sn = last_sn
-                            .map(|sn| format!("{}", sn.0))
-                            .unwrap_or_else(|| NONE_TEXT.to_string());
-
-                        Row::new(vec![
-                            format!("{}", guid.display()),
-                            topic_name.to_string(),
-                            last_sn,
-                            format!("{message_count}"),
-                            format!("{}", frag_messages.len()),
-                        ])
-                    })
-                    .collect();
-
-                let topic_col_len = state
-                    .participants
-                    .values()
-                    .map(|entity| {
-                        let Some(info) = entity.topic_info.as_ref() else {
-                            return NONE_TEXT.len();
-                        };
-                        info.publication_topic_data.topic_name.as_str().len()
-                    })
-                    .max()
-                    .unwrap_or(0)
-                    .max(TITLE_TOPIC.len());
-                let sn_col_len = state
-                    .participants
-                    .values()
-                    .map(|entity| {
-                        let Some(last_sn) = entity.last_sn else {
-                            return NONE_TEXT.len();
-                        };
-                        num_base10_digits_i64(last_sn.0) as usize
-                    })
-                    .max()
-                    .unwrap_or(0)
-                    .max(TITLE_SERIAL_NUMBER.len());
-                let msg_count_col_len = state
-                    .participants
-                    .values()
-                    .map(|entity| num_base10_digits_usize(entity.message_count) as usize)
-                    .max()
-                    .unwrap_or(0)
-                    .max(TITLE_MESSAGE_COUNT.len());
-                let num_frag_msgs_col_len = state
-                    .participants
-                    .values()
-                    .map(|entity| num_base10_digits_usize(entity.frag_messages.len()) as usize)
-                    .max()
-                    .unwrap_or(0)
-                    .max(TITLE_NUM_FRAGMENTED_MESSAGES.len());
-
-                let header = Row::new(vec![
-                    TITLE_GUID,
-                    TITLE_TOPIC,
-                    TITLE_SERIAL_NUMBER,
-                    TITLE_MESSAGE_COUNT,
-                    TITLE_NUM_FRAGMENTED_MESSAGES,
-                ]);
-                let widths = &[
-                    Constraint::Min(35),
-                    Constraint::Max(topic_col_len as u16),
-                    Constraint::Min(sn_col_len as u16),
-                    Constraint::Min(msg_count_col_len as u16),
-                    Constraint::Min(num_frag_msgs_col_len as u16),
-                ];
-
-                let table_block = Block::default().title("Writers").borders(Borders::ALL);
-                let table = Table::new(rows)
-                    .style(Style::default().fg(Color::White))
-                    .header(header)
-                    .block(table_block)
-                    .widths(widths)
-                    .column_spacing(1)
-                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                    .highlight_symbol(">");
-
-                frame.render_stateful_widget(table, chunks[1], &mut self.writer_table_state);
+                make_entity_table(&state, frame, chunks[1], &mut self.writer_table_state);
             }
             1 => {
-                const TITLE_TOPIC: &str = "topic";
-                const TITLE_NUM_WRITERS: &str = "# writers";
-
-                let mut topics: Vec<_> = state
-                    .participants
-                    .iter()
-                    .filter_map(|(_, entity)| {
-                        let info = entity.topic_info.as_ref()?;
-                        let topic_name = info.publication_topic_data.topic_name.as_str();
-                        Some((topic_name, entity))
-                    })
-                    .into_group_map()
-                    .into_iter()
-                    .collect();
-                topics.sort_unstable_by_key(|(topic_name, _)| *topic_name);
-                let rows: Vec<_> = topics
-                    .into_iter()
-                    .map(|(topic_name, entities)| {
-                        Row::new(vec![topic_name.to_string(), format!("{}", entities.len())])
-                    })
-                    .collect();
-                let header = Row::new(vec![TITLE_TOPIC, TITLE_NUM_WRITERS]);
-                let widths = &[Constraint::Min(35), Constraint::Min(10)];
-
-                let table_block = Block::default().title("Topics").borders(Borders::ALL);
-                let table = Table::new(rows)
-                    .style(Style::default().fg(Color::White))
-                    .header(header)
-                    .block(table_block)
-                    .widths(widths)
-                    .column_spacing(1)
-                    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-                    .highlight_symbol(">");
-
-                frame.render_stateful_widget(table, chunks[1], &mut self.topic_table_state);
+                make_topic_table(&state, frame, chunks[1], &mut self.topic_table_state);
             }
             _ => unreachable!(),
         }
@@ -386,4 +242,240 @@ impl Tui {
             _ => unreachable!(),
         }
     }
+}
+
+fn make_entity_table<B: Backend>(
+    state: &State,
+    frame: &mut Frame<B>,
+    rect: Rect,
+    writer_table_state: &mut TableState,
+) {
+    const NONE_TEXT: &str = "<none>";
+    const TITLE_GUID: &str = "GUID";
+    const TITLE_TOPIC: &str = "topic";
+    const TITLE_SERIAL_NUMBER: &str = "sn";
+    const TITLE_MESSAGE_COUNT: &str = "msg count";
+    const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "# frag msgs";
+    const TITLE_LAST_HEARTBEAT: &str = "last heartbeat";
+
+    struct TableEntry {
+        guid: String,
+        topic_name: String,
+        last_sn: String,
+        message_count: String,
+        frag_msg_count: String,
+        last_heartbeat: String,
+    }
+
+    let entities = state
+        .participants
+        .iter()
+        .flat_map(|(&guid_prefix, p_entry)| {
+            p_entry.entities.iter().map(move |(&entity_id, e_entry)| {
+                let guid = GUID::new(guid_prefix, entity_id);
+                (guid, e_entry)
+            })
+        });
+
+    let rows: Vec<_> = entities
+        .clone()
+        .map(|(guid, entity)| {
+            let topic_name = entity.topic_name().unwrap_or(NONE_TEXT);
+            let EntityState {
+                ref context,
+                last_sn,
+                ref frag_messages,
+                message_count,
+                recv_count,
+                since,
+                ref heartbeat,
+                ..
+            } = *entity;
+
+            let last_sn = last_sn
+                .map(|sn| format!("{}", sn.0))
+                .unwrap_or_else(|| NONE_TEXT.to_string());
+
+            let last_heartbeat = match heartbeat {
+                Some(heartbeat) => {
+                    format!("{:?}", heartbeat.since.elapsed())
+                }
+                None => NONE_TEXT.to_string(),
+            };
+
+            TableEntry {
+                guid: format!("{}", guid.display()),
+                topic_name: topic_name.to_string(),
+                last_sn,
+                message_count: format!("{message_count}"),
+                frag_msg_count: format!("{}", frag_messages.len()),
+                last_heartbeat,
+            }
+        })
+        .collect();
+
+    let topic_col_len = rows
+        .iter()
+        .map(|row| row.topic_name.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_TOPIC.len());
+    let sn_col_len = rows
+        .iter()
+        .map(|row| row.last_sn.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_SERIAL_NUMBER.len());
+    let msg_count_col_len = rows
+        .iter()
+        .map(|row| row.message_count.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_MESSAGE_COUNT.len());
+    let num_frag_msgs_col_len = rows
+        .iter()
+        .map(|row| row.frag_msg_count.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_NUM_FRAGMENTED_MESSAGES.len());
+    let last_heartbeat_col_len = rows
+        .iter()
+        .map(|row| row.last_heartbeat.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_LAST_HEARTBEAT.len());
+
+    let header = Row::new(vec![
+        TITLE_GUID,
+        TITLE_TOPIC,
+        TITLE_SERIAL_NUMBER,
+        TITLE_MESSAGE_COUNT,
+        TITLE_NUM_FRAGMENTED_MESSAGES,
+        TITLE_LAST_HEARTBEAT,
+    ]);
+    let widths = &[
+        Constraint::Min(35),
+        Constraint::Max(topic_col_len as u16),
+        Constraint::Min(sn_col_len as u16),
+        Constraint::Min(msg_count_col_len as u16),
+        Constraint::Min(num_frag_msgs_col_len as u16),
+        Constraint::Min(last_heartbeat_col_len as u16),
+    ];
+
+    let table_block = Block::default().title("Writers").borders(Borders::ALL);
+
+    let rows = rows.into_iter().map(|row| {
+        let TableEntry {
+            guid,
+            topic_name,
+            last_sn,
+            message_count,
+            frag_msg_count,
+            last_heartbeat,
+        } = row;
+        Row::new(vec![
+            guid,
+            topic_name,
+            last_sn,
+            message_count,
+            frag_msg_count,
+            last_heartbeat,
+        ])
+    });
+
+    let table = Table::new(rows)
+        .style(Style::default().fg(Color::White))
+        .header(header)
+        .block(table_block)
+        .widths(widths)
+        .column_spacing(1)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">");
+
+    frame.render_stateful_widget(table, rect, writer_table_state);
+}
+
+fn make_topic_table<B: Backend>(
+    state: &State,
+    frame: &mut Frame<B>,
+    rect: Rect,
+    writer_table_state: &mut TableState,
+) {
+    const TITLE_NAME: &str = "name";
+    const TITLE_NUM_READERS: &str = "# of readers";
+    const TITLE_NUM_WRITERS: &str = "# of writers";
+
+    struct TableEntry {
+        name: String,
+        n_readers: String,
+        n_writers: String,
+    }
+
+    let mut rows: Vec<_> = state
+        .topics
+        .iter()
+        .map(|(topic_name, topic)| {
+            let topic_name = topic_name.clone();
+            let n_readers = topic.readers.len().to_string();
+            let n_writers = topic.writers.len().to_string();
+
+            TableEntry {
+                name: topic_name,
+                n_readers,
+                n_writers,
+            }
+        })
+        .collect();
+
+    rows.sort_unstable_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
+
+    let name_col_len = rows
+        .iter()
+        .map(|row| row.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_NAME.len());
+    let n_readers_col_len = rows
+        .iter()
+        .map(|row| row.n_readers.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_NUM_READERS.len());
+    let n_writers_col_len = rows
+        .iter()
+        .map(|row| row.n_writers.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_NUM_WRITERS.len());
+
+    let header = Row::new(vec![TITLE_NAME, TITLE_NUM_READERS, TITLE_NUM_WRITERS]);
+    let widths = &[
+        Constraint::Min(name_col_len as u16),
+        Constraint::Min(n_readers_col_len as u16),
+        Constraint::Min(n_writers_col_len as u16),
+    ];
+
+    let rows: Vec<_> = rows
+        .into_iter()
+        .map(|row| {
+            let TableEntry {
+                name,
+                n_readers,
+                n_writers,
+            } = row;
+            Row::new(vec![name, n_readers, n_writers])
+        })
+        .collect();
+
+    let table_block = Block::default().title("Topics").borders(Borders::ALL);
+    let table = Table::new(rows)
+        .style(Style::default().fg(Color::White))
+        .header(header)
+        .block(table_block)
+        .widths(widths)
+        .column_spacing(1)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">");
+
+    frame.render_stateful_widget(table, rect, writer_table_state);
 }

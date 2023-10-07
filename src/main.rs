@@ -3,11 +3,11 @@ mod opts;
 mod otlp;
 mod rtps;
 mod state;
+mod ui;
 mod updater;
 mod utils;
 // mod qos;
 // mod dds;
-// mod ui;
 
 use crate::{opts::Opts, state::State};
 use anyhow::{bail, Result};
@@ -17,13 +17,21 @@ use std::{
     io,
     sync::{Arc, Mutex},
     thread,
+    time::Duration,
 };
-// use ui::Tui;
+use ui::Tui;
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt().with_writer(io::stderr).init();
-
     let opts = Opts::parse();
+    let Opts {
+        refresh_rate,
+        no_tui,
+        ..
+    } = opts;
+
+    if no_tui {
+        tracing_subscriber::fmt().with_writer(io::stderr).init();
+    }
 
     let (tx, rx) = flume::unbounded();
     let state = Arc::new(Mutex::new(State::default()));
@@ -43,8 +51,7 @@ fn main() -> Result<()> {
 
     // Start state updater
     let updater_handle = {
-        // let state = state.clone();
-        // let opts = opts.clone();
+        let state = state.clone();
 
         thread::spawn(move || {
             let updater = crate::updater::Updater::new(rx, state, &opts);
@@ -53,11 +60,11 @@ fn main() -> Result<()> {
     };
 
     // Run TUI
-    // if !opts.no_tui {
-    //     let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
-    //     let tui = Tui::new(tick_dur, state);
-    //     tui.run()?;
-    // }
+    if !no_tui {
+        let tick_dur = Duration::from_secs(1) / refresh_rate;
+        let tui = Tui::new(tick_dur, state);
+        tui.run()?;
+    }
 
     // Finalize
     rpts_watcher_handle.join().unwrap()?;

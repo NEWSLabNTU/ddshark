@@ -5,7 +5,8 @@ use rustdds::{
         spdp_participant_data::SpdpDiscoveredParticipantData,
         topic_data::{DiscoveredReaderData, DiscoveredWriterData},
     },
-    SequenceNumber, GUID, structure::sequence_number::SequenceNumberSet,
+    structure::sequence_number::SequenceNumberSet,
+    SequenceNumber, GUID,
 };
 use smoltcp::wire::Ipv4Repr;
 
@@ -14,6 +15,7 @@ pub enum RtpsEvent {
     Data(Box<DataEvent>),
     DataFrag(Box<DataFragEvent>),
     Gap(Box<GapEvent>),
+    Heartbeat(HeartbeatEvent),
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,12 @@ impl From<DataEvent> for RtpsEvent {
 impl From<GapEvent> for RtpsEvent {
     fn from(v: GapEvent) -> Self {
         Self::Gap(Box::new(v))
+    }
+}
+
+impl From<HeartbeatEvent> for RtpsEvent {
+    fn from(v: HeartbeatEvent) -> Self {
+        Self::Heartbeat(v)
     }
 }
 
@@ -123,4 +131,12 @@ pub struct DiscoveredWriterEvent {
 #[derive(Debug, Clone)]
 pub struct DiscoveredReaderEvent {
     pub data: DiscoveredReaderData,
+}
+
+#[derive(Debug, Clone)]
+pub struct HeartbeatEvent {
+    pub writer_id: GUID,
+    pub first_sn: SequenceNumber,
+    pub last_sn: SequenceNumber,
+    pub count: i32,
 }

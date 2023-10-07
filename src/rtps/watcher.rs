@@ -1,7 +1,7 @@
 use super::PacketSource;
 use crate::{
-    message::{DataEvent, DataFragEvent, GapEvent, RtpsEvent, RtpsMessage},
-    utils::{EntityIdExt, GUIDExt},
+    message::{DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, RtpsEvent, RtpsMessage},
+    utils::EntityIdExt,
 };
 use anyhow::Result;
 use rustdds::{
@@ -22,11 +22,13 @@ use rustdds::{
         Message, SubMessage, SubmessageBody,
     },
     structure::{guid::EntityId, sequence_number::FragmentNumber},
-    SequenceNumber, GUID,
+    GUID,
 };
 use serde::Deserialize;
-use std::hash::Hasher;
-use std::{collections::hash_map::DefaultHasher, hash::Hash};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
 use tracing::{debug, error, warn};
 
 pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Result<()> {
@@ -64,7 +66,7 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => match emsg {
             EntitySubmessage::AckNack(data, _) => {
-                let event = handle_submsg_ack_nack(msg, submsg, data);
+                let _event = handle_submsg_ack_nack(msg, submsg, data);
                 // Some(event)
                 None
             }
@@ -81,17 +83,17 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
                 Some(event)
             }
             EntitySubmessage::Heartbeat(data, _) => {
-                let event = handle_submsg_heartbeat(msg, submsg, data);
+                let _event = handle_submsg_heartbeat(msg, submsg, data);
                 // Some(event)
                 None
             }
             EntitySubmessage::HeartbeatFrag(data, _) => {
-                let event = handle_submsg_heartbeat_frag(msg, submsg, data);
+                let _event = handle_submsg_heartbeat_frag(msg, submsg, data);
                 // Some(event)
                 None
             }
             EntitySubmessage::NackFrag(data, _) => {
-                let event = handle_submsg_nack_frag(msg, submsg, data);
+                let _event = handle_submsg_nack_frag(msg, submsg, data);
                 // Some(event)
                 None
             }
@@ -281,19 +283,26 @@ fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag)
     // println!("nack {}\t{fragment_number_state:?}", writer_id.display());
 }
 
-fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat) {
+fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat) -> RtpsEvent {
     let guid_prefix = msg.header.guid_prefix;
     let Heartbeat {
-        reader_id,
         writer_id,
-        first_sn: SequenceNumber(first_sn),
-        last_sn: SequenceNumber(last_sn),
+        first_sn,
+        last_sn,
         count,
+        ..
     } = *data;
     let writer_id = GUID::new(guid_prefix, writer_id);
-    let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!("heartbeat {}\t{first_sn}\t{last_sn}", writer_id.display());
+
+    HeartbeatEvent {
+        writer_id,
+        first_sn,
+        last_sn,
+        count,
+    }
+    .into()
 }
 
 fn handle_submsg_heartbeat_frag(msg: &Message, _submsg: &SubMessage, data: &HeartbeatFrag) {
