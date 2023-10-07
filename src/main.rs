@@ -14,13 +14,14 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use rtps::PacketSource;
 use std::{
+    io,
     sync::{Arc, Mutex},
     thread,
 };
 // use ui::Tui;
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt().with_writer(io::stderr).init();
 
     let opts = Opts::parse();
 
