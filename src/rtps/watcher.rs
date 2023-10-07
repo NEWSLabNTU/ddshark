@@ -1,7 +1,7 @@
 use super::PacketSource;
 use crate::{
-    message::{DataEvent, DataFragEvent, RtpsEvent, RtpsMessage},
-    utils::EntityIdExt,
+    message::{DataEvent, DataFragEvent, GapEvent, RtpsEvent, RtpsMessage},
+    utils::{EntityIdExt, GUIDExt},
 };
 use anyhow::Result;
 use rustdds::{
@@ -12,17 +12,23 @@ use rustdds::{
     },
     messages::submessages::{
         submessage_elements::serialized_payload::SerializedPayload,
-        submessages::{Data, DataFrag, EntitySubmessage, InterpreterSubmessage},
+        submessages::{
+            AckNack, Data, DataFrag, EntitySubmessage, Gap, Heartbeat, HeartbeatFrag,
+            InterpreterSubmessage, NackFrag,
+        },
     },
     serialization::{
         pl_cdr_deserializer::{PlCdrDeserialize, PlCdrDeserializerAdapter},
         Message, SubMessage, SubmessageBody,
     },
     structure::{guid::EntityId, sequence_number::FragmentNumber},
-    GUID,
+    SequenceNumber, GUID,
 };
 use serde::Deserialize;
-use tracing::{error, warn};
+use std::hash::Hasher;
+use std::{collections::hash_map::DefaultHasher, hash::Hash};
+use tracing::{debug, error, warn};
+
 pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Result<()> {
     let iter = source.into_message_iter()?;
 
@@ -57,7 +63,11 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Res
 fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => match emsg {
-            EntitySubmessage::AckNack(_, _) => None,
+            EntitySubmessage::AckNack(data, _) => {
+                let event = handle_submsg_ack_nack(msg, submsg, data);
+                // Some(event)
+                None
+            }
             EntitySubmessage::Data(data, _) => {
                 let event = handle_submsg_data(msg, submsg, data);
                 Some(event)
@@ -66,10 +76,25 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
                 let event = handle_submsg_datafrag(msg, submsg, data);
                 Some(event)
             }
-            EntitySubmessage::Gap(_, _) => None,
-            EntitySubmessage::Heartbeat(_, _) => None,
-            EntitySubmessage::HeartbeatFrag(_, _) => None,
-            EntitySubmessage::NackFrag(_, _) => None,
+            EntitySubmessage::Gap(data, _) => {
+                let event = handle_submsg_gap(msg, submsg, data);
+                Some(event)
+            }
+            EntitySubmessage::Heartbeat(data, _) => {
+                let event = handle_submsg_heartbeat(msg, submsg, data);
+                // Some(event)
+                None
+            }
+            EntitySubmessage::HeartbeatFrag(data, _) => {
+                let event = handle_submsg_heartbeat_frag(msg, submsg, data);
+                // Some(event)
+                None
+            }
+            EntitySubmessage::NackFrag(data, _) => {
+                let event = handle_submsg_nack_frag(msg, submsg, data);
+                // Some(event)
+                None
+            }
         },
         SubmessageBody::Interpreter(imsg) => match *imsg {
             InterpreterSubmessage::InfoSource(_, _) => None,
@@ -99,7 +124,7 @@ fn handle_submsg_data(msg: &Message, _submsg: &SubMessage, data: &Data) -> RtpsE
     let payload = (|| {
         macro_rules! bail {
             () => {
-                error!(
+                debug!(
                     "payload deserialization is not implemented for {}",
                     writer_id.display()
                 );
@@ -142,7 +167,6 @@ fn handle_submsg_data(msg: &Message, _submsg: &SubMessage, data: &Data) -> RtpsE
                     deserialize_payload(writer_id, serialized_payload)?;
                 data.into()
             }
-
             EntityId::SPDP_BUILTIN_PARTICIPANT_READER => {
                 let data: SpdpDiscoveredParticipantData =
                     deserialize_payload(writer_id, serialized_payload)?;
@@ -184,19 +208,124 @@ fn handle_submsg_datafrag(msg: &Message, _submsg: &SubMessage, data: &DataFrag) 
         inline_qos: _,
         ref serialized_payload,
     } = *data;
+    let writer_id = GUID::new(guid_prefix, writer_id);
+    let reader_id = GUID::new(guid_prefix, reader_id);
     let payload_size = serialized_payload.len();
 
+    fn calculate_hash<T: Hash>(t: &T) -> u64 {
+        let mut s = DefaultHasher::new();
+        t.hash(&mut s);
+        s.finish()
+    }
+
+    let payload_hash = calculate_hash(serialized_payload);
+
+    // println!(
+    //     "datafrag {}\t\
+    //      start={fragment_starting_num}\t\
+    //      n_msgs={fragments_in_submessage}\t\
+    //      data_size={data_size}\t\
+    //      frag_size={fragment_size}\t\
+    //      payload_size={payload_size}",
+    //     writer_id.display()
+    // );
+
     DataFragEvent {
-        writer_id: GUID::new(guid_prefix, writer_id),
-        reader_id: GUID::new(guid_prefix, reader_id),
+        writer_id,
+        reader_id,
         writer_sn,
         fragment_starting_num,
         fragments_in_submessage,
         data_size,
         fragment_size,
         payload_size,
+        payload_hash,
     }
     .into()
+}
+
+fn handle_submsg_gap(msg: &Message, _submsg: &SubMessage, data: &Gap) -> RtpsEvent {
+    let guid_prefix = msg.header.guid_prefix;
+    let Gap {
+        reader_id,
+        writer_id,
+        gap_start,
+        ref gap_list,
+    } = *data;
+    let writer_id = GUID::new(guid_prefix, writer_id);
+    let reader_id = GUID::new(guid_prefix, reader_id);
+
+    // println!("gap {}", writer_id.display());
+
+    GapEvent {
+        writer_id,
+        reader_id,
+        gap_start,
+        gap_list: gap_list.clone(),
+    }
+    .into()
+}
+
+fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> () {
+    let guid_prefix = msg.header.guid_prefix;
+    let NackFrag {
+        reader_id,
+        writer_id,
+        writer_sn,
+        ref fragment_number_state,
+        count,
+    } = *data;
+    let writer_id = GUID::new(guid_prefix, writer_id);
+    let reader_id = GUID::new(guid_prefix, reader_id);
+
+    // println!("nack {}\t{fragment_number_state:?}", writer_id.display());
+}
+
+fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat) {
+    let guid_prefix = msg.header.guid_prefix;
+    let Heartbeat {
+        reader_id,
+        writer_id,
+        first_sn: SequenceNumber(first_sn),
+        last_sn: SequenceNumber(last_sn),
+        count,
+    } = *data;
+    let writer_id = GUID::new(guid_prefix, writer_id);
+    let reader_id = GUID::new(guid_prefix, reader_id);
+
+    // println!("heartbeat {}\t{first_sn}\t{last_sn}", writer_id.display());
+}
+
+fn handle_submsg_heartbeat_frag(msg: &Message, _submsg: &SubMessage, data: &HeartbeatFrag) {
+    let guid_prefix = msg.header.guid_prefix;
+    let HeartbeatFrag {
+        reader_id,
+        writer_id,
+        writer_sn,
+        last_fragment_num: FragmentNumber(last_fragment_num),
+        count,
+    } = *data;
+    let writer_id = GUID::new(guid_prefix, writer_id);
+    let reader_id = GUID::new(guid_prefix, reader_id);
+
+    // println!(
+    //     "heartbeat_frag {}\t{last_fragment_num}",
+    //     writer_id.display()
+    // );
+}
+
+fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) {
+    let guid_prefix = msg.header.guid_prefix;
+    let AckNack {
+        reader_id,
+        writer_id,
+        ref reader_sn_state,
+        count,
+    } = *data;
+    let writer_id = GUID::new(guid_prefix, writer_id);
+    let reader_id = GUID::new(guid_prefix, reader_id);
+
+    // println!("ack_nack {}\t{reader_sn_state:?}", writer_id.display());
 }
 
 fn deserialize_payload<T>(entity_id: EntityId, payload: Option<&SerializedPayload>) -> Option<T>

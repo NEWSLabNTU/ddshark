@@ -25,7 +25,7 @@ fn main() -> Result<()> {
 
     let opts = Opts::parse();
 
-    let (tx, rx) = flume::bounded(8192);
+    let (tx, rx) = flume::unbounded();
     let state = Arc::new(Mutex::new(State::default()));
 
     let rpts_watcher_handle = {
@@ -43,8 +43,8 @@ fn main() -> Result<()> {
 
     // Start state updater
     let updater_handle = {
-        let state = state.clone();
-        let opts = opts.clone();
+        // let state = state.clone();
+        // let opts = opts.clone();
 
         thread::spawn(move || {
             let updater = crate::updater::Updater::new(rx, state, &opts);

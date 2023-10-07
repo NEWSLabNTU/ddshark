@@ -1,21 +1,41 @@
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
-    discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
+    discovery::data_types::topic_data::{
+        DiscoveredReaderData, DiscoveredWriterData, PublicationBuiltinTopicData,
+    },
     structure::guid::{EntityId, GuidPrefix},
-    SequenceNumber,
+    SequenceNumber, GUID,
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::Range,
+    sync::{Arc, Weak},
+    time::Instant,
+};
 
 /// The TUI state.
 #[derive(Debug)]
 pub(crate) struct State {
     pub participants: HashMap<GuidPrefix, ParticipantState>,
+    pub topics: HashMap<String, Arc<TopicState>>,
+}
+
+impl State {
+    pub fn get_or_insert_entity(&mut self, guid: GUID) -> &mut EntityState {
+        self.participants
+            .entry(guid.prefix)
+            .or_default()
+            .entities
+            .entry(guid.entity_id)
+            .or_default()
+    }
 }
 
 impl Default for State {
     fn default() -> Self {
         Self {
             participants: HashMap::new(),
+            topics: HashMap::new(),
         }
     }
 }
@@ -39,6 +59,9 @@ pub struct EntityState {
     pub last_sn: Option<SequenceNumber>,
     pub frag_messages: HashMap<SequenceNumber, FragmentedMessage>,
     pub message_count: usize,
+    pub recv_count: usize,
+    pub since: Instant,
+    pub topic: Weak<TopicState>,
 }
 
 impl EntityState {
@@ -50,6 +73,11 @@ impl EntityState {
         let topic_name = &ctx.data.publication_topic_data.topic_name;
         Some(topic_name)
     }
+
+    pub fn recv_bitrate(&self) -> f64 {
+        let elapsed = self.since.elapsed();
+        self.recv_count as f64 * 8.0 / elapsed.as_secs_f64()
+    }
 }
 
 impl Default for EntityState {
@@ -60,6 +88,9 @@ impl Default for EntityState {
             frag_messages: HashMap::new(),
             last_sn: None,
             message_count: 0,
+            recv_count: 0,
+            since: Instant::now(),
+            topic: Weak::new(),
         }
     }
 }
@@ -104,11 +135,24 @@ pub struct EntityReaderContext {
 }
 
 #[derive(Debug)]
+pub struct TopicState {
+    pub data: PublicationBuiltinTopicData,
+}
+
+impl TopicState {
+    pub fn topic_name(&self) -> &str {
+        &self.data.topic_name
+    }
+}
+
+#[derive(Debug)]
 pub struct FragmentedMessage {
     pub data_size: usize,
     pub num_fragments: usize,
     pub recvd_fragments: usize,
-    pub free_intervals: DefragBuf,
+    /// A range -> payload hash mapping
+    pub intervals: HashMap<Range<usize>, u64>,
+    pub defrag_buf: DefragBuf,
 }
 
 impl FragmentedMessage {
@@ -118,10 +162,14 @@ impl FragmentedMessage {
             data_size,
             num_fragments,
             recvd_fragments: 0,
-            free_intervals: DefragBuf::new(num_fragments),
+            defrag_buf: DefragBuf::new(num_fragments),
+            intervals: HashMap::new(),
         }
     }
 }
 
-#[derive(Debug)]
-pub struct TopicStat {}
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FragmentInterval {
+    pub range: Range<usize>,
+    pub payload_hash: u64,
+}

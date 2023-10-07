@@ -91,6 +91,7 @@ impl TraceHandle {
                 event.fragment_starting_num,
                 event.payload_size,
             ),
+            RtpsEvent::Gap(_) => todo!(),
         };
         let traffic_type = match writer_id.entity_id.entity_kind {
             // TODO: add complete cases
