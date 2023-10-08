@@ -1,3 +1,4 @@
+use chrono::{DateTime, Local};
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
     discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
@@ -7,7 +8,7 @@ use rustdds::{
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 /// The TUI state.
@@ -15,6 +16,7 @@ use std::{
 pub(crate) struct State {
     pub participants: HashMap<GuidPrefix, ParticipantState>,
     pub topics: HashMap<String, TopicState>,
+    pub abnormalities: Vec<Abnormality>,
 }
 
 impl State {
@@ -33,6 +35,7 @@ impl Default for State {
         Self {
             participants: HashMap::new(),
             topics: HashMap::new(),
+            abnormalities: vec![],
         }
     }
 }
@@ -174,4 +177,13 @@ pub struct HeartbeatState {
     pub last_sn: i64,
     pub count: i32,
     pub since: Instant,
+}
+
+#[derive(Debug)]
+pub struct Abnormality {
+    pub when: DateTime<Local>,
+    pub writer_id: Option<GUID>,
+    pub reader_id: Option<GUID>,
+    pub topic_name: Option<String>,
+    pub desc: String,
 }

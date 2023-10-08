@@ -6,15 +6,17 @@ use crate::{
     opts::Opts,
     otlp,
     state::{
-        EntityReaderContext, EntityWriterContext, FragmentedMessage, HeartbeatState, State,
-        TopicState,
+        Abnormality, EntityReaderContext, EntityWriterContext, FragmentedMessage, HeartbeatState,
+        State, TopicState,
     },
+    utils::GUIDExt,
 };
+use chrono::Local;
 use itertools::chain;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 use tracing::{debug, error, warn};
 
@@ -219,6 +221,8 @@ impl Updater {
             writer_id,
             writer_sn,
             // fragment_size,
+            // data_size,
+            // payload_size,
             ..
         } = *event;
 
@@ -234,13 +238,22 @@ impl Updater {
         //     entity.recv_bitrate()
         // );
 
-        let topic_name = entity.topic_name().map(|t| t.to_string());
-        let msg_state = entity.frag_messages.entry(writer_sn).or_insert_with(|| {
+        // let topic_name = entity.topic_name().map(|t| t.to_string());
+        let frag_msg = entity.frag_messages.entry(writer_sn).or_insert_with(|| {
             FragmentedMessage::new(event.data_size as usize, event.fragment_size as usize)
         });
 
-        if event.data_size as usize != msg_state.data_size {
-            error!("event.data_size changes! Ignore this message.");
+        if event.data_size as usize != frag_msg.data_size {
+            state.abnormalities.push(Abnormality {
+                when: Local::now(),
+                writer_id: Some(writer_id),
+                reader_id: None,
+                topic_name: entity.topic_name.clone(),
+                desc: format!(
+                    "data_size changes from {} to {} in DataFrag submsg",
+                    frag_msg.data_size, event.data_size
+                ),
+            });
             return;
         }
 
@@ -251,9 +264,17 @@ impl Updater {
             start..end
         };
 
-        let prev_hash = msg_state
-            .intervals
-            .insert(range.clone(), event.payload_hash);
+        let prev_hash = frag_msg.intervals.insert(range.clone(), event.payload_hash);
+
+        // println!(
+        //     "datafrag {}\t\
+        //      start={fragment_starting_num}\t\
+        //      n_msgs={fragments_in_submessage}\t\
+        //      data_size={data_size}\t\
+        //      frag_size={fragment_size}\t\
+        //      payload_size={payload_size}",
+        //     writer_id.display()
+        // );
 
         match prev_hash {
             Some(prev_hash) => {
@@ -270,28 +291,38 @@ impl Updater {
                 //     range.end
                 // );
 
-                let defrag_buf = &mut msg_state.defrag_buf;
+                let defrag_buf = &mut frag_msg.defrag_buf;
+                // let topic_name = topic_name.unwrap_or("<none>".to_string());
 
-                if let Err(err) = defrag_buf.insert(range.clone()) {
-                    warn!("Unable to insert interval {range:?}");
-                    warn!("{err}");
-                    let free_intervals: Vec<_> = defrag_buf.free_intervals().collect();
-                    // dbg!(free_intervals, range);
+                if let Err(_err) = defrag_buf.insert(range.clone()) {
+                    // warn!("Unable to insert interval {range:?}");
+                    // warn!("{err}");
+                    // let free_intervals: Vec<_> = defrag_buf.free_intervals().collect();
+
+                    state.abnormalities.push(Abnormality {
+                        when: Local::now(),
+                        writer_id: Some(writer_id),
+                        reader_id: None,
+                        topic_name: entity.topic_name.clone(),
+                        desc: format!("unable to insert fragment {range:?} into defrag buffer"),
+                    });
+
                     // println!(
-                    //     "defrag {}\t{range:?}\t{topic_name:?}\t{free_intervals:?}\t!",
+                    //     "defrag {}\t{range:?}\t{topic_name}\t{free_intervals:?}\t!",
                     //     writer_id.display()
                     // );
 
                     return;
                 } else {
                     let free_intervals: Vec<_> = defrag_buf.free_intervals().collect();
+
                     // println!(
-                    //     "defrag {}\t{range:?}\t{topic_name:?}\t{free_intervals:?}\t!",
+                    //     "defrag {}\t{range:?}\t{topic_name}\t{free_intervals:?}",
                     //     writer_id.display()
                     // );
                 }
 
-                msg_state.recvd_fragments += event.fragments_in_submessage as usize;
+                frag_msg.recvd_fragments += event.fragments_in_submessage as usize;
 
                 if defrag_buf.is_full() {
                     entity.frag_messages.remove(&event.writer_sn).unwrap();

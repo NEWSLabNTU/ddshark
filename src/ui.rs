@@ -1,5 +1,5 @@
 use crate::{
-    state::{EntityState, State},
+    state::{Abnormality, EntityState, State},
     utils::GUIDExt,
 };
 use crossterm::{
@@ -24,11 +24,12 @@ use std::{
 };
 use tracing::error;
 
-const TAB_TITLES: &[&str] = &["Writers", "Topics"];
+const TAB_TITLES: &[&str] = &["Entities", "Topics", "Abnormalities"];
 
 pub(crate) struct Tui {
     writer_table_state: TableState,
     topic_table_state: TableState,
+    abnormality_table_state: TableState,
     tick_dur: Duration,
     tab_index: usize,
     state: Arc<Mutex<State>>,
@@ -39,6 +40,7 @@ impl Tui {
         Self {
             writer_table_state: TableState::default(),
             topic_table_state: TableState::default(),
+            abnormality_table_state: TableState::default(),
             tick_dur,
             state,
             tab_index: 0,
@@ -66,8 +68,10 @@ impl Tui {
         Ok(())
     }
 
-    fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
-        // let mut table_state = TableState::default();
+    fn run_loop<B>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()>
+    where
+        B: Backend,
+    {
         let mut last_tick = Instant::now();
 
         loop {
@@ -78,6 +82,7 @@ impl Tui {
                     .checked_sub(last_tick.elapsed())
                     .unwrap_or_else(|| Duration::from_secs(0));
 
+                // Process keyboard events
                 if event::poll(timeout)? {
                     if let Event::Key(key) = event::read()? {
                         use KeyCode as C;
@@ -106,10 +111,18 @@ impl Tui {
                             C::PageDown => {
                                 self.next_page();
                             }
+                            C::Home => {
+                                self.first_item();
+                            }
+                            C::End => {
+                                self.last_item();
+                            }
                             C::Tab => {
+                                // Jump to next tab
                                 self.tab_index = (self.tab_index + 1) % n_tabs;
                             }
                             C::BackTab => {
+                                // Go to previous tab
                                 self.tab_index = (self.tab_index + (n_tabs - 1)) % n_tabs;
                             }
                             _ => {}
@@ -131,7 +144,10 @@ impl Tui {
         Ok(())
     }
 
-    fn draw_ui<B: Backend>(&mut self, frame: &mut Frame<B>, elapsed_time: Duration) {
+    fn draw_ui<B>(&mut self, frame: &mut Frame<B>, _elapsed_time: Duration)
+    where
+        B: Backend,
+    {
         let Ok(state) = self.state.lock() else {
             // TODO: show error
             error!("Mutex is poisoned");
@@ -149,7 +165,8 @@ impl Tui {
             .block(tabs_block)
             .style(Style::default().fg(Color::White))
             .highlight_style(Style::default().fg(Color::Yellow))
-            .divider(DOT);
+            .divider(DOT)
+            .select(self.tab_index);
         frame.render_widget(tabs, chunks[0]);
 
         match self.tab_index {
@@ -158,6 +175,9 @@ impl Tui {
             }
             1 => {
                 make_topic_table(&state, frame, chunks[1], &mut self.topic_table_state);
+            }
+            2 => {
+                make_abnormality_table(&state, frame, chunks[1], &mut self.abnormality_table_state);
             }
             _ => unreachable!(),
         }
@@ -179,6 +199,13 @@ impl Tui {
                 };
                 self.topic_table_state.select(Some(new_idx));
             }
+            2 => {
+                let new_idx = match self.abnormality_table_state.selected() {
+                    Some(idx) => idx.saturating_sub(1),
+                    None => 0,
+                };
+                self.abnormality_table_state.select(Some(new_idx));
+            }
             _ => unreachable!(),
         }
     }
@@ -198,6 +225,13 @@ impl Tui {
                     None => 0,
                 };
                 self.topic_table_state.select(Some(new_idx));
+            }
+            2 => {
+                let new_idx = match self.abnormality_table_state.selected() {
+                    Some(idx) => idx.saturating_add(1),
+                    None => 0,
+                };
+                self.abnormality_table_state.select(Some(new_idx));
             }
             _ => unreachable!(),
         }
@@ -219,11 +253,20 @@ impl Tui {
                 };
                 self.topic_table_state.select(Some(new_idx));
             }
+            2 => {
+                let new_idx = match self.abnormality_table_state.selected() {
+                    Some(idx) => idx.saturating_sub(30),
+                    None => 0,
+                };
+                self.abnormality_table_state.select(Some(new_idx));
+            }
             _ => unreachable!(),
         }
     }
 
     fn next_page(&mut self) {
+        // TODO: get correct page size
+
         match self.tab_index {
             0 => {
                 let new_idx = match self.writer_table_state.selected() {
@@ -239,17 +282,58 @@ impl Tui {
                 };
                 self.topic_table_state.select(Some(new_idx));
             }
+            2 => {
+                let new_idx = match self.abnormality_table_state.selected() {
+                    Some(idx) => idx.saturating_add(30),
+                    None => 0,
+                };
+                self.abnormality_table_state.select(Some(new_idx));
+            }
             _ => unreachable!(),
         }
     }
+
+    fn first_item(&mut self) {
+        match self.tab_index {
+            0 => {
+                self.writer_table_state.select(Some(0));
+            }
+            1 => {
+                self.topic_table_state.select(Some(0));
+            }
+            2 => {
+                self.abnormality_table_state.select(Some(0));
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn last_item(&mut self) {
+        // TODO
+
+        // match self.tab_index {
+        //     0 => {
+        //         self.writer_table_state.select(Some(0));
+        //     }
+        //     1 => {
+        //         self.topic_table_state.select(Some(0));
+        //     }
+        //     2 => {
+        //         self.abnormality_table_state.select(Some(0));
+        //     }
+        //     _ => unreachable!(),
+        // }
+    }
 }
 
-fn make_entity_table<B: Backend>(
+fn make_entity_table<B>(
     state: &State,
     frame: &mut Frame<B>,
     rect: Rect,
-    writer_table_state: &mut TableState,
-) {
+    table_state: &mut TableState,
+) where
+    B: Backend,
+{
     const NONE_TEXT: &str = "<none>";
     const TITLE_GUID: &str = "GUID";
     const TITLE_TOPIC: &str = "topic";
@@ -392,15 +476,17 @@ fn make_entity_table<B: Backend>(
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">");
 
-    frame.render_stateful_widget(table, rect, writer_table_state);
+    frame.render_stateful_widget(table, rect, table_state);
 }
 
-fn make_topic_table<B: Backend>(
+fn make_topic_table<B>(
     state: &State,
     frame: &mut Frame<B>,
     rect: Rect,
-    writer_table_state: &mut TableState,
-) {
+    table_state: &mut TableState,
+) where
+    B: Backend,
+{
     const TITLE_NAME: &str = "name";
     const TITLE_NUM_READERS: &str = "# of readers";
     const TITLE_NUM_WRITERS: &str = "# of writers";
@@ -477,5 +563,138 @@ fn make_topic_table<B: Backend>(
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">");
 
-    frame.render_stateful_widget(table, rect, writer_table_state);
+    frame.render_stateful_widget(table, rect, table_state);
+}
+
+fn make_abnormality_table<B>(
+    state: &State,
+    frame: &mut Frame<B>,
+    rect: Rect,
+    table_state: &mut TableState,
+) where
+    B: Backend,
+{
+    const TITLE_WHEN: &str = "when";
+    const TITLE_WRITER_ID: &str = "writer";
+    const TITLE_READER_ID: &str = "reader";
+    const TITLE_TOPIC_NAME: &str = "topic";
+    const TITLE_DESC: &str = "desc";
+
+    struct TableEntry {
+        when: String,
+        writer_id: String,
+        reader_id: String,
+        topic_name: String,
+        desc: String,
+    }
+
+    let mut rows: Vec<_> = state
+        .abnormalities
+        .iter()
+        .map(|report| {
+            let Abnormality {
+                when,
+                writer_id,
+                reader_id,
+                ref topic_name,
+                ref desc,
+            } = *report;
+            let guid_to_string = |guid: Option<GUID>| match guid {
+                Some(guid) => format!("{}", guid.display()),
+                None => "<none>".to_string(),
+            };
+
+            let when = when.to_rfc3339();
+            let reader_id = guid_to_string(reader_id);
+            let writer_id = guid_to_string(writer_id);
+            let topic_name = topic_name
+                .to_owned()
+                .unwrap_or_else(|| "<none>".to_string());
+            let desc = desc.clone();
+
+            TableEntry {
+                when,
+                writer_id,
+                reader_id,
+                topic_name,
+                desc,
+            }
+        })
+        .collect();
+
+    rows.sort_unstable_by(|lhs, rhs| lhs.when.cmp(&rhs.when).reverse());
+
+    let when_col_len = rows
+        .iter()
+        .map(|row| row.when.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_WHEN.len());
+    let reader_id_col_len = rows
+        .iter()
+        .map(|row| row.reader_id.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_READER_ID.len());
+    let writer_id_col_len = rows
+        .iter()
+        .map(|row| row.writer_id.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_WRITER_ID.len());
+    let topic_name_col_len = rows
+        .iter()
+        .map(|row| row.topic_name.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_TOPIC_NAME.len());
+    let desc_col_len = rows
+        .iter()
+        .map(|row| row.desc.len())
+        .max()
+        .unwrap_or(0)
+        .max(TITLE_DESC.len());
+
+    let header = Row::new(vec![
+        TITLE_WHEN,
+        TITLE_WRITER_ID,
+        TITLE_READER_ID,
+        TITLE_TOPIC_NAME,
+        TITLE_DESC,
+    ]);
+    let widths = &[
+        Constraint::Min(when_col_len as u16),
+        Constraint::Min(writer_id_col_len as u16),
+        Constraint::Min(reader_id_col_len as u16),
+        Constraint::Min(topic_name_col_len as u16),
+        Constraint::Min(desc_col_len as u16),
+    ];
+
+    let rows: Vec<_> = rows
+        .into_iter()
+        .map(|row| {
+            let TableEntry {
+                when,
+                writer_id,
+                reader_id,
+                topic_name,
+                desc,
+            } = row;
+            Row::new(vec![when, writer_id, reader_id, topic_name, desc])
+        })
+        .collect();
+
+    let table_block = Block::default()
+        .title("Abnormalities")
+        .borders(Borders::ALL);
+    let table = Table::new(rows)
+        .style(Style::default().fg(Color::White))
+        .header(header)
+        .block(table_block)
+        .widths(widths)
+        .column_spacing(1)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(">");
+
+    frame.render_stateful_widget(table, rect, table_state);
 }

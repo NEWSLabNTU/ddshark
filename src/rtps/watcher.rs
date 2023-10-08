@@ -4,7 +4,7 @@ use crate::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
         NackFragEvent, RtpsEvent, RtpsMessage,
     },
-    utils::EntityIdExt,
+    utils::{EntityIdExt, GUIDExt},
 };
 use anyhow::Result;
 use rustdds::{
@@ -280,6 +280,12 @@ fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag)
     let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!("nack {}\t{fragment_number_state:?}", writer_id.display());
+
+    let nums: Vec<_> = fragment_number_state
+        .iter()
+        .map(|FragmentNumber(n)| n)
+        .collect();
+    // println!("nack_frag {} {:?}", writer_id.display(), nums);
 
     NackFragEvent {
         writer_id,
