@@ -8,7 +8,7 @@ use rustdds::{
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
-    time::{Instant, SystemTime},
+    time::Instant,
 };
 
 /// The TUI state.

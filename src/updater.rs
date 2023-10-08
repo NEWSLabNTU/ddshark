@@ -9,14 +9,13 @@ use crate::{
         Abnormality, EntityReaderContext, EntityWriterContext, FragmentedMessage, HeartbeatState,
         State, TopicState,
     },
-    utils::GUIDExt,
 };
 use chrono::Local;
 use itertools::chain;
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-    time::{Instant, SystemTime},
+    time::Instant,
 };
 use tracing::{debug, error, warn};
 

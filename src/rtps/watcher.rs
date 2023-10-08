@@ -4,7 +4,7 @@ use crate::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
         NackFragEvent, RtpsEvent, RtpsMessage,
     },
-    utils::{EntityIdExt, GUIDExt},
+    utils::EntityIdExt,
 };
 use anyhow::Result;
 use rustdds::{
@@ -273,18 +273,19 @@ fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag)
         reader_id,
         writer_id,
         writer_sn,
-        ref fragment_number_state,
+        // ref fragment_number_state,
         count,
+        ..
     } = *data;
     let writer_id = GUID::new(guid_prefix, writer_id);
     let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!("nack {}\t{fragment_number_state:?}", writer_id.display());
 
-    let nums: Vec<_> = fragment_number_state
-        .iter()
-        .map(|FragmentNumber(n)| n)
-        .collect();
+    // let nums: Vec<_> = fragment_number_state
+    //     .iter()
+    //     .map(|FragmentNumber(n)| n)
+    //     .collect();
     // println!("nack_frag {} {:?}", writer_id.display(), nums);
 
     NackFragEvent {
@@ -353,8 +354,9 @@ fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -
     let AckNack {
         reader_id,
         writer_id,
-        ref reader_sn_state,
+        // ref reader_sn_state,
         count,
+        ..
     } = *data;
     let writer_id = GUID::new(guid_prefix, writer_id);
     let reader_id = GUID::new(guid_prefix, reader_id);
