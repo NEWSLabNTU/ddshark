@@ -2,7 +2,8 @@ use crate::message::PacketHeaders;
 use anyhow::Result;
 use bytes::Bytes;
 use etherparse::{Ethernet2Header, SingleVlanHeader};
-use pcap::PacketCodec;
+use libc::timeval;
+use pcap::{PacketCodec, PacketHeader};
 use rustdds::serialization::Message;
 use smoltcp::{
     phy::ChecksumCapabilities,
@@ -131,26 +132,38 @@ impl PacketDecoder {
 }
 
 impl PacketCodec for PacketDecoder {
-    type Item = Option<(PacketHeaders, Message)>;
+    type Item = PacketKind;
 
     fn decode(&mut self, packet: pcap::Packet) -> Self::Item {
-        let (eth_header, vlan_header, packet_data) = Self::dissect_eth_header(&packet).ok()?;
-        let (ip_repr, data) = match Self::is_fragment(packet_data).ok()? {
-            false => {
-                let (ip_repr, data) = Self::dissect_ip_header(packet_data).ok()?;
-                (ip_repr, data.to_vec())
-            }
-            true => {
+        let args = (move |packet: &pcap::Packet| {
+            let (eth_header, vlan_header, packet_data) = Self::dissect_eth_header(&packet).ok()?;
+            let (ip_repr, data) = if Self::is_fragment(packet_data).ok()? {
                 let (ip_repr, data) = self.process_fragments(packet_data).ok()?;
                 (ip_repr, data?)
-            }
-        };
+            } else {
+                let (ip_repr, data) = Self::dissect_ip_header(packet_data).ok()?;
+                (ip_repr, data.to_vec())
+            };
 
-        let position = data.windows(4).position(|window| window == b"RTPS")?;
+            let position = data.windows(4).position(|window| window == b"RTPS")?;
+            Some((eth_header, vlan_header, ip_repr, data, position))
+        })(&packet);
+
+        macro_rules! bail {
+            () => {
+                let PacketHeader { ts, caplen, len } = *packet.header;
+                let ts = timeval_to_duration(ts);
+                return PacketKind::Other(OtherPacket { ts, caplen, len });
+            };
+        }
+
+        let Some((eth_header, vlan_header, ip_repr, data, position)) = args else {
+            bail!();
+        };
 
         let payload = data[position..].to_vec();
         if payload.get(0..4) != Some(b"RTPS") {
-            return None;
+            bail!();
         }
 
         let bytes = Bytes::copy_from_slice(&payload);
@@ -158,18 +171,62 @@ impl PacketCodec for PacketDecoder {
             Ok(msg) => msg,
             Err(err) => {
                 error!("error: {err:?}");
-                return None;
+                bail!();
             }
         };
 
-        Some((
-            PacketHeaders {
+        RtpsPacket {
+            headers: PacketHeaders {
                 pcap_header: *packet.header,
                 eth_header,
                 vlan_header,
                 ipv4_header: ip_repr,
+                ts: timeval_to_duration(packet.header.ts),
             },
             message,
-        ))
+        }
+        .into()
     }
+}
+
+pub enum PacketKind {
+    Rtps(RtpsPacket),
+    Other(OtherPacket),
+}
+
+impl PacketKind {
+    pub fn ts(&self) -> chrono::Duration {
+        match self {
+            PacketKind::Rtps(packet) => packet.headers.ts,
+            PacketKind::Other(packet) => packet.ts,
+        }
+    }
+}
+
+impl From<RtpsPacket> for PacketKind {
+    fn from(v: RtpsPacket) -> Self {
+        Self::Rtps(v)
+    }
+}
+
+impl From<OtherPacket> for PacketKind {
+    fn from(v: OtherPacket) -> Self {
+        Self::Other(v)
+    }
+}
+
+pub struct RtpsPacket {
+    pub headers: PacketHeaders,
+    pub message: Message,
+}
+
+pub struct OtherPacket {
+    pub ts: chrono::Duration,
+    pub caplen: u32,
+    pub len: u32,
+}
+
+fn timeval_to_duration(ts: timeval) -> chrono::Duration {
+    let timeval { tv_sec, tv_usec } = ts;
+    chrono::Duration::microseconds(tv_sec * 1_000_000 + tv_usec)
 }

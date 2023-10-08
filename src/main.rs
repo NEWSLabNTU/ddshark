@@ -19,6 +19,7 @@ use std::{
     thread,
     time::Duration,
 };
+use tracing::warn;
 use ui::Tui;
 
 fn main() -> Result<()> {
@@ -26,6 +27,7 @@ fn main() -> Result<()> {
     let Opts {
         refresh_rate,
         no_tui,
+        fast_replay,
         ..
     } = opts;
 
@@ -41,8 +43,16 @@ fn main() -> Result<()> {
             (Some(_), Some(_)) => {
                 bail!("--file and --interface cannot be specified simultaneously")
             }
-            (Some(file), None) => PacketSource::File(file.clone()),
-            (None, Some(interface)) => PacketSource::Interface(interface.clone()),
+            (Some(file), None) => PacketSource::File {
+                path: file.clone(),
+                sync_time: !fast_replay,
+            },
+            (None, Some(interface)) => {
+                if fast_replay {
+                    warn!("--fast-replay has no effect in conjunction with --interface");
+                }
+                PacketSource::Interface(interface.clone())
+            }
             (None, None) => PacketSource::Default,
         };
 

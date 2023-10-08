@@ -1,4 +1,4 @@
-use super::PacketSource;
+use super::{packet_decoder::RtpsPacket, PacketSource};
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
@@ -38,12 +38,12 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Res
     let iter = source.into_message_iter()?;
 
     'msg_loop: for msg in iter {
-        let (headers, msg) = msg?;
+        let RtpsPacket { headers, message } = msg?;
 
-        let events = msg
+        let events = message
             .submessages
             .iter()
-            .filter_map(|submsg| handle_submsg(&msg, submsg));
+            .filter_map(|submsg| handle_submsg(&message, submsg));
 
         for event in events {
             use flume::TrySendError as E;

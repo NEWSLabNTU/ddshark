@@ -69,6 +69,7 @@ pub struct PacketHeaders {
     pub eth_header: Ethernet2Header,
     pub vlan_header: Option<SingleVlanHeader>,
     pub ipv4_header: Ipv4Repr,
+    pub ts: chrono::Duration,
 }
 
 #[derive(Debug, Clone)]

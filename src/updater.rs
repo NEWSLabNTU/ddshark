@@ -313,8 +313,7 @@ impl Updater {
 
                     return;
                 } else {
-                    let free_intervals: Vec<_> = defrag_buf.free_intervals().collect();
-
+                    // let free_intervals: Vec<_> = defrag_buf.free_intervals().collect();
                     // println!(
                     //     "defrag {}\t{range:?}\t{topic_name}\t{free_intervals:?}",
                     //     writer_id.display()

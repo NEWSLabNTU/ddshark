@@ -20,4 +20,7 @@ pub struct Opts {
 
     #[clap(long)]
     pub no_tui: bool,
+
+    #[clap(long)]
+    pub fast_replay: bool,
 }
