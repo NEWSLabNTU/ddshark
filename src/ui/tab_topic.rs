@@ -10,11 +10,14 @@ use ratatui::{
 
 pub(crate) struct TabTopic {
     table_state: TableState,
+    num_entries: usize,
 }
+
 impl TabTopic {
     pub(crate) fn new() -> Self {
         Self {
             table_state: TableState::default(),
+            num_entries: 0,
         }
     }
 
@@ -23,8 +26,8 @@ impl TabTopic {
         B: Backend,
     {
         const TITLE_NAME: &str = "name";
-        const TITLE_NUM_READERS: &str = "# of readers";
-        const TITLE_NUM_WRITERS: &str = "# of writers";
+        const TITLE_NUM_READERS: &str = "# readers";
+        const TITLE_NUM_WRITERS: &str = "# writers";
 
         struct TableEntry {
             name: String,
@@ -88,6 +91,9 @@ impl TabTopic {
             })
             .collect();
 
+        // Save the # of entires
+        self.num_entries = rows.len();
+
         let table_block = Block::default().title("Topics").borders(Borders::ALL);
         let table = Table::new(rows)
             .style(Style::default().fg(Color::White))
@@ -102,44 +108,54 @@ impl TabTopic {
     }
 
     pub(crate) fn previous_item(&mut self) {
-        let new_idx = match self.table_state.selected() {
-            Some(idx) => idx.saturating_sub(1),
-            None => 0,
-        };
-        self.table_state.select(Some(new_idx));
+        if self.num_entries > 0 {
+            let new_idx = match self.table_state.selected() {
+                Some(idx) => idx.saturating_sub(1),
+                None => 0,
+            };
+            self.table_state.select(Some(new_idx));
+        }
     }
 
     pub(crate) fn next_item(&mut self) {
-        let new_idx = match self.table_state.selected() {
-            Some(idx) => idx.saturating_add(1),
-            None => 0,
-        };
-        self.table_state.select(Some(new_idx));
+        if let Some(last_idx) = self.num_entries.checked_sub(1) {
+            let new_idx = match self.table_state.selected() {
+                Some(idx) => idx.saturating_add(1).min(last_idx),
+                None => 0,
+            };
+            self.table_state.select(Some(new_idx));
+        }
     }
 
     pub(crate) fn previous_page(&mut self) {
-        let new_idx = match self.table_state.selected() {
-            Some(idx) => idx.saturating_sub(30),
-            None => 0,
-        };
-        self.table_state.select(Some(new_idx));
+        if self.num_entries > 0 {
+            let new_idx = match self.table_state.selected() {
+                Some(idx) => idx.saturating_sub(30),
+                None => 0,
+            };
+            self.table_state.select(Some(new_idx));
+        }
     }
 
     pub(crate) fn next_page(&mut self) {
-        // TODO: get correct page size
-
-        let new_idx = match self.table_state.selected() {
-            Some(idx) => idx.saturating_add(30),
-            None => 0,
-        };
-        self.table_state.select(Some(new_idx));
+        if let Some(last_idx) = self.num_entries.checked_sub(1) {
+            let new_idx = match self.table_state.selected() {
+                Some(idx) => idx.saturating_add(30).min(last_idx),
+                None => 0,
+            };
+            self.table_state.select(Some(new_idx));
+        }
     }
 
     pub(crate) fn first_item(&mut self) {
-        self.table_state.select(Some(0));
+        if self.num_entries > 0 {
+            self.table_state.select(Some(0));
+        }
     }
 
     pub(crate) fn last_item(&mut self) {
-        // TODO
+        if let Some(idx) = self.num_entries.checked_sub(1) {
+            self.table_state.select(Some(idx));
+        }
     }
 }
