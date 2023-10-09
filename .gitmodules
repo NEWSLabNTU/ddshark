@@ -1,6 +1,3 @@
-[submodule "cyclors"]
-	path = cyclors
-	url = https://github.com/jerry73204/cyclors.git
 [submodule "RustDDS"]
 	path = RustDDS
 	url = git@github.com:jerry73204/RustDDS.git
