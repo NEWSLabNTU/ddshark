@@ -29,67 +29,36 @@ impl TabTopic {
         const TITLE_NUM_READERS: &str = "# readers";
         const TITLE_NUM_WRITERS: &str = "# writers";
 
-        struct TableEntry {
-            name: String,
-            n_readers: String,
-            n_writers: String,
-        }
+        let mut topics: Vec<_> = state.topics.iter().collect();
+        topics.sort_unstable_by(|(lname, _), (rname, _)| lname.cmp(rname));
 
-        let mut rows: Vec<_> = state
-            .topics
-            .iter()
+        let header = vec![TITLE_NAME, TITLE_NUM_READERS, TITLE_NUM_WRITERS];
+        let rows: Vec<_> = topics
+            .into_iter()
             .map(|(topic_name, topic)| {
                 let topic_name = topic_name.clone();
                 let n_readers = topic.readers.len().to_string();
                 let n_writers = topic.writers.len().to_string();
-
-                TableEntry {
-                    name: topic_name,
-                    n_readers,
-                    n_writers,
-                }
+                vec![topic_name, n_readers, n_writers]
             })
             .collect();
 
-        rows.sort_unstable_by(|lhs, rhs| lhs.name.cmp(&rhs.name));
-
-        let name_col_len = rows
+        let widths: Vec<_> = header
             .iter()
-            .map(|row| row.name.len())
-            .max()
-            .unwrap_or(0)
-            .max(TITLE_NAME.len());
-        let n_readers_col_len = rows
-            .iter()
-            .map(|row| row.n_readers.len())
-            .max()
-            .unwrap_or(0)
-            .max(TITLE_NUM_READERS.len());
-        let n_writers_col_len = rows
-            .iter()
-            .map(|row| row.n_writers.len())
-            .max()
-            .unwrap_or(0)
-            .max(TITLE_NUM_WRITERS.len());
-
-        let header = Row::new(vec![TITLE_NAME, TITLE_NUM_READERS, TITLE_NUM_WRITERS]);
-        let widths = &[
-            Constraint::Min(name_col_len as u16),
-            Constraint::Min(n_readers_col_len as u16),
-            Constraint::Min(n_writers_col_len as u16),
-        ];
-
-        let rows: Vec<_> = rows
-            .into_iter()
-            .map(|row| {
-                let TableEntry {
-                    name,
-                    n_readers,
-                    n_writers,
-                } = row;
-                Row::new(vec![name, n_readers, n_writers])
+            .enumerate()
+            .map(|(idx, title)| {
+                let max_len = rows
+                    .iter()
+                    .map(|row| row[idx].len())
+                    .max()
+                    .unwrap_or(0)
+                    .max(title.len());
+                Constraint::Max(max_len as u16)
             })
             .collect();
+
+        let header = Row::new(header);
+        let rows: Vec<_> = rows.into_iter().map(Row::new).collect();
 
         // Save the # of entires
         self.num_entries = rows.len();
@@ -99,7 +68,7 @@ impl TabTopic {
             .style(Style::default().fg(Color::White))
             .header(header)
             .block(table_block)
-            .widths(widths)
+            .widths(&widths)
             .column_spacing(1)
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol(">");

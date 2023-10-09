@@ -1,5 +1,5 @@
 use crate::{
-    message::{RtpsEvent, RtpsMessage},
+    message::{RtpsContext, RtpsEvent},
     opts::Opts,
 };
 use etherparse::SingleVlanHeader;
@@ -71,31 +71,31 @@ impl TraceHandle {
         }
     }
 
-    pub fn send_trace(&self, message: &RtpsMessage, topic_name: String) {
+    pub fn send_trace(&self, message: &RtpsEvent, topic_name: String) {
         let (headers, event) = (message.headers.clone(), message.event.clone());
         let capture_time = headers.pcap_header.ts;
         // let ma: [u8; 6] = headers.eth_header.destination;
 
         let (submsg_type, writer_id, sn, fragment_starting_num, payload_size) = match event {
-            RtpsEvent::Data(event) => (
+            RtpsContext::Data(event) => (
                 "DATA",
                 event.writer_id,
                 event.writer_sn,
                 0u32,
                 event.payload_size,
             ),
-            RtpsEvent::DataFrag(event) => (
+            RtpsContext::DataFrag(event) => (
                 "DATA_FRAG",
                 event.writer_id,
                 event.writer_sn,
                 event.fragment_starting_num,
                 event.payload_size,
             ),
-            RtpsEvent::Gap(_) => todo!(),
-            RtpsEvent::Heartbeat(_) => todo!(),
-            RtpsEvent::AckNack(_) => todo!(),
-            RtpsEvent::NackFrag(_) => todo!(),
-            RtpsEvent::HeartbeatFrag(_) => todo!(),
+            RtpsContext::Gap(_) => todo!(),
+            RtpsContext::Heartbeat(_) => todo!(),
+            RtpsContext::AckNack(_) => todo!(),
+            RtpsContext::NackFrag(_) => todo!(),
+            RtpsContext::HeartbeatFrag(_) => todo!(),
         };
         let traffic_type = match writer_id.entity_id.entity_kind {
             // TODO: add complete cases

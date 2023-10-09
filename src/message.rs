@@ -11,7 +11,13 @@ use rustdds::{
 use smoltcp::wire::Ipv4Repr;
 
 #[derive(Debug, Clone)]
-pub enum RtpsEvent {
+pub enum UpdateEvent {
+    Rtps(RtpsEvent),
+    Tick,
+}
+
+#[derive(Debug, Clone)]
+pub enum RtpsContext {
     Data(Box<DataEvent>),
     DataFrag(Box<DataFragEvent>),
     Gap(Box<GapEvent>),
@@ -21,43 +27,43 @@ pub enum RtpsEvent {
     HeartbeatFrag(HeartbeatFragEvent),
 }
 
-impl From<NackFragEvent> for RtpsEvent {
+impl From<NackFragEvent> for RtpsContext {
     fn from(v: NackFragEvent) -> Self {
         Self::NackFrag(v)
     }
 }
 
-impl From<DataFragEvent> for RtpsEvent {
+impl From<DataFragEvent> for RtpsContext {
     fn from(v: DataFragEvent) -> Self {
         Self::DataFrag(Box::new(v))
     }
 }
 
-impl From<DataEvent> for RtpsEvent {
+impl From<DataEvent> for RtpsContext {
     fn from(v: DataEvent) -> Self {
         Self::Data(Box::new(v))
     }
 }
 
-impl From<GapEvent> for RtpsEvent {
+impl From<GapEvent> for RtpsContext {
     fn from(v: GapEvent) -> Self {
         Self::Gap(Box::new(v))
     }
 }
 
-impl From<HeartbeatEvent> for RtpsEvent {
+impl From<HeartbeatEvent> for RtpsContext {
     fn from(v: HeartbeatEvent) -> Self {
         Self::Heartbeat(v)
     }
 }
 
-impl From<HeartbeatFragEvent> for RtpsEvent {
+impl From<HeartbeatFragEvent> for RtpsContext {
     fn from(v: HeartbeatFragEvent) -> Self {
         Self::HeartbeatFrag(v)
     }
 }
 
-impl From<AckNackEvent> for RtpsEvent {
+impl From<AckNackEvent> for RtpsContext {
     fn from(v: AckNackEvent) -> Self {
         Self::AckNack(v)
     }
@@ -73,9 +79,9 @@ pub struct PacketHeaders {
 }
 
 #[derive(Debug, Clone)]
-pub struct RtpsMessage {
+pub struct RtpsEvent {
     pub headers: PacketHeaders,
-    pub event: RtpsEvent,
+    pub event: RtpsContext,
 }
 
 #[derive(Debug, Clone)]

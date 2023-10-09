@@ -1,33 +1,28 @@
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent,
-        HeartbeatFragEvent, NackFragEvent, RtpsEvent, RtpsMessage,
+        HeartbeatFragEvent, NackFragEvent, RtpsContext, UpdateEvent,
     },
     opts::Opts,
     otlp,
-    state::{
-        Abnormality, EntityReaderContext, EntityWriterContext, FragmentedMessage, HeartbeatState,
-        State, TopicState,
-    },
+    state::{Abnormality, FragmentedMessage, HeartbeatState, State},
 };
 use chrono::Local;
-use itertools::chain;
 use std::{
-    collections::HashSet,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tracing::{debug, error, warn};
 
 pub struct Updater {
-    rx: flume::Receiver<RtpsMessage>,
+    rx: flume::Receiver<UpdateEvent>,
     state: Arc<Mutex<State>>,
     otlp_handle: Option<otlp::TraceHandle>,
 }
 
 impl Updater {
     pub(crate) fn new(
-        rx: flume::Receiver<RtpsMessage>,
+        rx: flume::Receiver<UpdateEvent>,
         state: Arc<Mutex<State>>,
         opt: &Opts,
     ) -> Self {
@@ -45,13 +40,25 @@ impl Updater {
     }
 
     pub(crate) fn run(self) {
-        // Consume event messages from rx.
-        loop {
-            use flume::RecvError as E;
+        const INTERVAL: Duration = Duration::from_millis(100);
 
-            let message = match self.rx.recv() {
+        let mut deadline = Instant::now() + INTERVAL;
+        loop {
+            use flume::RecvTimeoutError as E;
+
+            let message = match self.rx.recv_deadline(deadline) {
                 Ok(evt) => evt,
                 Err(E::Disconnected) => break,
+                Err(E::Timeout) => {
+                    deadline += INTERVAL;
+
+                    let now = Instant::now();
+                    while now >= deadline {
+                        deadline += INTERVAL;
+                    }
+
+                    UpdateEvent::Tick
+                }
             };
 
             let Ok(mut state) = self.state.lock() else {
@@ -59,48 +66,79 @@ impl Updater {
                 break;
             };
 
-            let event = &message.event;
-
-            match event {
-                RtpsEvent::Data(event) => {
-                    self.handle_data_event(&mut state, &message, event);
+            match message {
+                UpdateEvent::Tick => {
+                    self.handle_tick(&mut state);
                 }
-                RtpsEvent::DataFrag(event) => {
-                    self.handle_data_frag_event(&mut state, &message, event);
-                }
-                RtpsEvent::Gap(event) => {
-                    self.handle_gap_event(&mut state, &message, event);
-                }
-                RtpsEvent::Heartbeat(event) => {
-                    self.handle_heartbeat_event(&mut state, &message, event);
-                }
-                RtpsEvent::AckNack(event) => {
-                    self.handle_ack_nack_event(&mut state, &message, event);
-                }
-                RtpsEvent::NackFrag(event) => {
-                    self.handle_nack_frag_event(&mut state, &message, event);
-                }
-                RtpsEvent::HeartbeatFrag(event) => {
-                    self.handle_heartbeat_frag_event(&mut state, &message, event);
-                }
+                UpdateEvent::Rtps(msg) => match &msg.event {
+                    RtpsContext::Data(event) => {
+                        self.handle_data_event(&mut state, event);
+                    }
+                    RtpsContext::DataFrag(event) => {
+                        self.handle_data_frag_event(&mut state, event);
+                    }
+                    RtpsContext::Gap(event) => {
+                        self.handle_gap_event(&mut state, event);
+                    }
+                    RtpsContext::Heartbeat(event) => {
+                        self.handle_heartbeat_event(&mut state, event);
+                    }
+                    RtpsContext::AckNack(event) => {
+                        self.handle_ack_nack_event(&mut state, event);
+                    }
+                    RtpsContext::NackFrag(event) => {
+                        self.handle_nack_frag_event(&mut state, event);
+                    }
+                    RtpsContext::HeartbeatFrag(event) => {
+                        self.handle_heartbeat_frag_event(&mut state, event);
+                    }
+                },
             }
         }
     }
 
-    fn handle_data_event(&self, state: &mut State, _message: &RtpsMessage, event: &DataEvent) {
+    fn handle_tick(&self, state: &mut State) {
+        const ALPHA: f64 = 0.1;
+
+        let now = Instant::now();
+        let elapsed_secs = state.tick_since.elapsed().as_secs_f64();
+        state.tick_since = now;
+
+        for participant in state.participants.values_mut() {
+            for entity in participant.writers.values_mut() {
+                // update average bitrate
+                let curr_bitrate = (entity.acc_byte_count * 8) as f64 / elapsed_secs;
+                entity.avg_bitrate = entity.avg_bitrate * ALPHA + curr_bitrate * (1.0 - ALPHA);
+                entity.acc_byte_count = 0;
+
+                // update average msgrate
+                let curr_msgrate = entity.acc_msg_count as f64 / elapsed_secs;
+                entity.avg_msgrate = entity.avg_msgrate * ALPHA + curr_msgrate * (1.0 - ALPHA);
+                entity.acc_msg_count = 0;
+            }
+        }
+    }
+
+    fn handle_data_event(&self, state: &mut State, event: &DataEvent) {
         {
             let participant = state
                 .participants
                 .entry(event.writer_id.prefix)
                 .or_default();
-            let entity = participant
-                .entities
+            let writer = participant
+                .writers
                 .entry(event.writer_id.entity_id)
                 .or_default();
 
-            entity.last_sn = Some(event.writer_sn);
-            entity.message_count += 1;
-            entity.recv_count += event.payload_size;
+            writer.last_sn = Some(event.writer_sn);
+
+            // Increase message count
+            writer.total_msg_count += 1;
+            writer.acc_msg_count += 1;
+
+            // Increase byte count
+            writer.total_byte_count += event.payload_size;
+            writer.acc_byte_count += event.payload_size;
         }
 
         // println!(
@@ -112,7 +150,7 @@ impl Updater {
 
         if let Some(payload) = &event.payload {
             match payload {
-                DataPayload::DiscoveredTopic(data) => {
+                DataPayload::DiscoveredTopic(_data) => {
                     debug!("DiscoveredTopic not yet implemented");
                     // let topic_name = data.topic_data.name.clone();
                     // TODO
@@ -126,36 +164,36 @@ impl Updater {
                         .participants
                         .entry(remote_writer_guid.prefix)
                         .or_default();
-                    let entity = participant
-                        .entities
+                    let writer = participant
+                        .writers
                         .entry(remote_writer_guid.entity_id)
                         .or_default();
 
                     // Update discovered data in state.entities
                     {
-                        if !entity.context.is_unknown() {
-                            // TODO: show warning
+                        if let Some(orig_data) = &writer.data {
+                            let orig_data = &orig_data.publication_topic_data;
+                            let new_data = &data.publication_topic_data;
+
+                            if orig_data.topic_name != new_data.topic_name {
+                                state.abnormalities.push(Abnormality {
+                                    when: Local::now(),
+                                    writer_id: Some(event.writer_id),
+                                    reader_id: None,
+                                    topic_name: None,
+                                    desc: "topic name changed in DiscoveredWriterData".to_string(),
+                                });
+                            }
                         }
 
-                        entity.context = EntityWriterContext {
-                            data: (**data).clone(),
-                        }
-                        .into();
+                        writer.data = Some((**data).clone());
                     }
 
                     // Update stats on associated topic
                     {
                         let topic_name = data.publication_topic_data.topic_name.clone();
-                        let topic_state =
-                            state
-                                .topics
-                                .entry(topic_name.clone())
-                                .or_insert_with(|| TopicState {
-                                    readers: HashSet::new(),
-                                    writers: HashSet::new(),
-                                });
+                        let topic_state = state.topics.entry(topic_name.clone()).or_default();
                         topic_state.writers.insert(remote_writer_guid);
-                        entity.topic_name = Some(topic_name);
                     }
                 }
                 DataPayload::DiscoveredReader(data) => {
@@ -168,39 +206,39 @@ impl Updater {
                         .entry(remote_reader_guid.prefix)
                         .or_default();
 
-                    let entity = participant
-                        .entities
+                    let reader = participant
+                        .readers
                         .entry(remote_reader_guid.entity_id)
                         .or_default();
 
                     // Update discovered data in state.entities
                     {
-                        if !entity.context.is_unknown() {
-                            // TODO: show warning
+                        if let Some(orig_data) = &reader.data {
+                            let orig_data = &orig_data.subscription_topic_data;
+                            let new_data = &data.subscription_topic_data;
+
+                            if orig_data.topic_name() != new_data.topic_name() {
+                                state.abnormalities.push(Abnormality {
+                                    when: Local::now(),
+                                    writer_id: Some(event.writer_id),
+                                    reader_id: None,
+                                    topic_name: None,
+                                    desc: "topic name changed in DiscoveredWriterData".to_string(),
+                                });
+                            }
                         }
 
-                        entity.context = EntityReaderContext {
-                            data: (**data).clone(),
-                        }
-                        .into();
+                        reader.data = Some((**data).clone());
                     }
 
                     // Update stats on associated topic
                     {
                         let topic_name = data.subscription_topic_data.topic_name().clone();
-                        let topic_state =
-                            state
-                                .topics
-                                .entry(topic_name.clone())
-                                .or_insert_with(|| TopicState {
-                                    readers: HashSet::new(),
-                                    writers: HashSet::new(),
-                                });
+                        let topic_state = state.topics.entry(topic_name.clone()).or_default();
                         topic_state.readers.insert(remote_reader_guid);
-                        entity.topic_name = Some(topic_name);
                     }
                 }
-                DataPayload::DiscoveredParticipant(data) => {
+                DataPayload::DiscoveredParticipant(_data) => {
                     debug!("DiscoveredParticipant not yet implemented");
                     // TODO
                 }
@@ -208,12 +246,7 @@ impl Updater {
         }
     }
 
-    fn handle_data_frag_event(
-        &self,
-        state: &mut State,
-        _message: &RtpsMessage,
-        event: &DataFragEvent,
-    ) {
+    fn handle_data_frag_event(&self, state: &mut State, event: &DataFragEvent) {
         let DataFragEvent {
             fragment_starting_num,
             fragments_in_submessage,
@@ -226,10 +259,12 @@ impl Updater {
         } = *event;
 
         let participant = state.participants.entry(writer_id.prefix).or_default();
-        let entity = participant.entities.entry(writer_id.entity_id).or_default();
+        let entity = participant.writers.entry(writer_id.entity_id).or_default();
 
-        // Increase recv count
-        entity.recv_count += event.payload_size;
+        // Increase byte count
+        entity.total_byte_count += event.payload_size;
+        entity.acc_byte_count += event.payload_size;
+
         // println!(
         //     "{}\t{}\t{:.2}bps",
         //     event.writer_id.display(),
@@ -243,15 +278,17 @@ impl Updater {
         });
 
         if event.data_size as usize != frag_msg.data_size {
+            let desc = format!(
+                "data_size changes from {} to {} in DataFrag submsg",
+                frag_msg.data_size, event.data_size
+            );
+
             state.abnormalities.push(Abnormality {
                 when: Local::now(),
                 writer_id: Some(writer_id),
                 reader_id: None,
-                topic_name: entity.topic_name.clone(),
-                desc: format!(
-                    "data_size changes from {} to {} in DataFrag submsg",
-                    frag_msg.data_size, event.data_size
-                ),
+                topic_name: entity.topic_name().map(|t| t.to_string()),
+                desc,
             });
             return;
         }
@@ -302,7 +339,7 @@ impl Updater {
                         when: Local::now(),
                         writer_id: Some(writer_id),
                         reader_id: None,
-                        topic_name: entity.topic_name.clone(),
+                        topic_name: entity.topic_name().map(|t| t.to_string()),
                         desc: format!("unable to insert fragment {range:?} into defrag buffer"),
                     });
 
@@ -325,44 +362,42 @@ impl Updater {
                 if defrag_buf.is_full() {
                     entity.frag_messages.remove(&event.writer_sn).unwrap();
                     entity.last_sn = Some(event.writer_sn);
-                    entity.message_count += 1;
+
+                    // Increase message count
+                    entity.total_msg_count += 1;
+                    entity.acc_msg_count += 1;
                 }
             }
         }
     }
 
-    fn handle_gap_event(&self, state: &mut State, _message: &RtpsMessage, event: &GapEvent) {
-        let GapEvent {
-            writer_id,
-            gap_start,
-            ref gap_list,
-            ..
-        } = *event;
+    fn handle_gap_event(&self, state: &mut State, event: &GapEvent) {
+        // let GapEvent {
+        //     writer_id,
+        //     gap_start,
+        //     ref gap_list,
+        //     ..
+        // } = *event;
 
-        let participant = state.participants.entry(writer_id.prefix).or_default();
-        let entity = participant.entities.entry(writer_id.entity_id).or_default();
+        // let participant = state.participants.entry(writer_id.prefix).or_default();
+        // let entity = participant.entities.entry(writer_id.entity_id).or_default();
 
-        let gaps: Vec<_> = chain!([gap_start], gap_list.iter())
-            .map(|sn| sn.0)
-            .collect();
+        // let gaps: Vec<_> = chain!([gap_start], gap_list.iter())
+        //     .map(|sn| sn.0)
+        //     .collect();
         // println!("{}\t{gaps:?}", writer_id.display());
 
         // gap_list.iter();
         // todo!();
     }
 
-    fn handle_heartbeat_event(
-        &self,
-        state: &mut State,
-        _message: &RtpsMessage,
-        event: &HeartbeatEvent,
-    ) {
+    fn handle_heartbeat_event(&self, state: &mut State, event: &HeartbeatEvent) {
         let participant = state
             .participants
             .entry(event.writer_id.prefix)
             .or_default();
         let entity = participant
-            .entities
+            .writers
             .entry(event.writer_id.entity_id)
             .or_default();
 
@@ -393,27 +428,9 @@ impl Updater {
         }
     }
 
-    fn handle_ack_nack_event(
-        &self,
-        state: &mut State,
-        _message: &RtpsMessage,
-        event: &AckNackEvent,
-    ) {
-    }
+    fn handle_ack_nack_event(&self, state: &mut State, event: &AckNackEvent) {}
 
-    fn handle_nack_frag_event(
-        &self,
-        state: &mut State,
-        _message: &RtpsMessage,
-        event: &NackFragEvent,
-    ) {
-    }
+    fn handle_nack_frag_event(&self, state: &mut State, event: &NackFragEvent) {}
 
-    fn handle_heartbeat_frag_event(
-        &self,
-        state: &mut State,
-        _message: &RtpsMessage,
-        event: &HeartbeatFragEvent,
-    ) {
-    }
+    fn handle_heartbeat_frag_event(&self, state: &mut State, event: &HeartbeatFragEvent) {}
 }

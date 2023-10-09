@@ -1,5 +1,5 @@
 use crate::{
-    state::{Abnormality, State},
+    state::{HeartbeatState, State, WriterState},
     utils::GUIDExt,
 };
 use ratatui::{
@@ -12,11 +12,12 @@ use ratatui::{
 };
 use rustdds::GUID;
 
-pub(crate) struct TabAbnormality {
+pub(crate) struct TabWriter {
     table_state: TableState,
     num_entries: usize,
 }
-impl TabAbnormality {
+
+impl TabWriter {
     pub(crate) fn new() -> Self {
         Self {
             table_state: TableState::default(),
@@ -28,46 +29,85 @@ impl TabAbnormality {
     where
         B: Backend,
     {
-        const TITLE_WHEN: &str = "when";
-        const TITLE_WRITER_ID: &str = "writer";
-        const TITLE_READER_ID: &str = "reader";
-        const TITLE_TOPIC_NAME: &str = "topic";
-        const TITLE_DESC: &str = "desc";
+        const TITLE_GUID: &str = "GUID";
+        const TITLE_TOPIC: &str = "topic";
+        const TITLE_SERIAL_NUMBER: &str = "sn";
+        const TITLE_MESSAGE_COUNT: &str = "msgs";
+        const TITLE_BYTE_COUNT: &str = "bytes";
+        const TITLE_MSGRATE: &str = "msgrate";
+        const TITLE_BITRATE: &str = "bitrate";
+        const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "unfrag_msgs";
+        const TITLE_HEARTBEAT: &str = "cached_sn";
 
-        let mut abnormalities: Vec<_> = state.abnormalities.iter().collect();
-        abnormalities.sort_unstable_by(|lhs, rhs| lhs.when.cmp(&rhs.when).reverse());
+        let writers = state.participants.iter().flat_map(|(&guid_prefix, part)| {
+            part.writers.iter().map(move |(&entity_id, writer)| {
+                let guid = GUID::new(guid_prefix, entity_id);
+                (guid, writer)
+            })
+        });
 
         let header = vec![
-            TITLE_WHEN,
-            TITLE_WRITER_ID,
-            TITLE_READER_ID,
-            TITLE_TOPIC_NAME,
-            TITLE_DESC,
+            TITLE_GUID,
+            TITLE_SERIAL_NUMBER,
+            TITLE_MESSAGE_COUNT,
+            TITLE_MSGRATE,
+            TITLE_BYTE_COUNT,
+            TITLE_BITRATE,
+            TITLE_NUM_FRAGMENTED_MESSAGES,
+            TITLE_HEARTBEAT,
+            TITLE_TOPIC,
         ];
-        let rows: Vec<_> = abnormalities
-            .into_iter()
-            .map(|report| {
-                let Abnormality {
-                    when,
-                    writer_id,
-                    reader_id,
-                    ref topic_name,
-                    ref desc,
-                } = *report;
-                let guid_to_string = |guid: Option<GUID>| match guid {
-                    Some(guid) => format!("{}", guid.display()),
-                    None => "<none>".to_string(),
+        let rows: Vec<_> = writers
+            .clone()
+            .map(|(guid, entity)| {
+                let topic_name = entity.topic_name().unwrap_or("");
+                let WriterState {
+                    last_sn,
+                    ref frag_messages,
+                    total_msg_count,
+                    total_byte_count,
+                    avg_bitrate,
+                    avg_msgrate,
+                    ref heartbeat,
+                    ..
+                } = *entity;
+
+                let guid = format!("{}", guid.display());
+                let topic_name = topic_name.to_string();
+                let byte_count = format!("{total_byte_count}");
+                let message_count = format!("{total_msg_count}");
+                let avg_bitrate = format!("{avg_bitrate:.2}");
+                let avg_msgrate = format!("{avg_msgrate:.2}");
+                let frag_msg_count = if frag_messages.is_empty() {
+                    "-".to_string()
+                } else {
+                    format!("{}", frag_messages.len())
+                };
+                let last_sn = last_sn
+                    .map(|sn| format!("{}", sn.0))
+                    .unwrap_or_else(|| "-".to_string());
+
+                let heartbeat_range = match heartbeat {
+                    Some(heartbeat) => {
+                        let HeartbeatState {
+                            first_sn, last_sn, ..
+                        } = heartbeat;
+                        format!("{first_sn}..{last_sn}")
+                    }
+                    None => "-".to_string(),
                 };
 
-                let when = when.to_rfc3339();
-                let reader_id = guid_to_string(reader_id);
-                let writer_id = guid_to_string(writer_id);
-                let topic_name = topic_name
-                    .to_owned()
-                    .unwrap_or_else(|| "<none>".to_string());
-                let desc = desc.clone();
-
-                vec![when, writer_id, reader_id, topic_name, desc]
+                vec![
+                    guid,
+                    last_sn,
+                    message_count,
+                    avg_msgrate,
+                    byte_count,
+                    avg_bitrate,
+                    frag_msg_count,
+                    heartbeat_range,
+                    topic_name,
+                ]
             })
             .collect();
 
@@ -88,12 +128,11 @@ impl TabAbnormality {
         let header = Row::new(header);
         let rows: Vec<_> = rows.into_iter().map(Row::new).collect();
 
+        let table_block = Block::default().title("Writers").borders(Borders::ALL);
+
         // Save the # of entires
         self.num_entries = rows.len();
 
-        let table_block = Block::default()
-            .title("Abnormalities")
-            .borders(Borders::ALL);
         let table = Table::new(rows)
             .style(Style::default().fg(Color::White))
             .header(header)

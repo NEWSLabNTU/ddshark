@@ -2,7 +2,7 @@ use super::{packet_decoder::RtpsPacket, PacketSource};
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
-        NackFragEvent, RtpsEvent, RtpsMessage,
+        NackFragEvent, RtpsContext, RtpsEvent, UpdateEvent,
     },
     utils::EntityIdExt,
 };
@@ -34,7 +34,7 @@ use std::{
 };
 use tracing::{debug, error, warn};
 
-pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Result<()> {
+pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Result<()> {
     let iter = source.into_message_iter()?;
 
     'msg_loop: for msg in iter {
@@ -48,10 +48,12 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Res
         for event in events {
             use flume::TrySendError as E;
 
-            match tx.try_send(RtpsMessage {
+            let msg = UpdateEvent::Rtps(RtpsEvent {
                 headers: headers.clone(),
                 event,
-            }) {
+            });
+
+            match tx.try_send(msg) {
                 Ok(()) => {}
                 Err(E::Disconnected(_)) => break 'msg_loop,
                 Err(E::Full(_)) => {
@@ -65,7 +67,7 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<RtpsMessage>) -> Res
     Ok(())
 }
 
-fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
+fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsContext> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => match emsg {
             EntitySubmessage::AckNack(data, _) => {
@@ -106,7 +108,7 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsEvent> {
     }
 }
 
-fn handle_submsg_data(msg: &Message, _submsg: &SubMessage, data: &Data) -> RtpsEvent {
+fn handle_submsg_data(msg: &Message, _submsg: &SubMessage, data: &Data) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
 
     let Data {
@@ -195,7 +197,7 @@ fn handle_submsg_data(msg: &Message, _submsg: &SubMessage, data: &Data) -> RtpsE
     .into()
 }
 
-fn handle_submsg_datafrag(msg: &Message, _submsg: &SubMessage, data: &DataFrag) -> RtpsEvent {
+fn handle_submsg_datafrag(msg: &Message, _submsg: &SubMessage, data: &DataFrag) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
 
     let DataFrag {
@@ -245,7 +247,7 @@ fn handle_submsg_datafrag(msg: &Message, _submsg: &SubMessage, data: &DataFrag) 
     .into()
 }
 
-fn handle_submsg_gap(msg: &Message, _submsg: &SubMessage, data: &Gap) -> RtpsEvent {
+fn handle_submsg_gap(msg: &Message, _submsg: &SubMessage, data: &Gap) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let Gap {
         reader_id,
@@ -267,7 +269,7 @@ fn handle_submsg_gap(msg: &Message, _submsg: &SubMessage, data: &Gap) -> RtpsEve
     .into()
 }
 
-fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> RtpsEvent {
+fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let NackFrag {
         reader_id,
@@ -297,7 +299,7 @@ fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag)
     .into()
 }
 
-fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat) -> RtpsEvent {
+fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let Heartbeat {
         writer_id,
@@ -323,7 +325,7 @@ fn handle_submsg_heartbeat_frag(
     msg: &Message,
     _submsg: &SubMessage,
     data: &HeartbeatFrag,
-) -> RtpsEvent {
+) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let HeartbeatFrag {
         reader_id,
@@ -349,7 +351,7 @@ fn handle_submsg_heartbeat_frag(
     .into()
 }
 
-fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -> RtpsEvent {
+fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let AckNack {
         reader_id,

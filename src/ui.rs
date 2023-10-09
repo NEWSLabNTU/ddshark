@@ -1,6 +1,7 @@
 mod tab_abnormality;
-mod tab_entity;
+mod tab_reader;
 mod tab_topic;
+mod tab_writer;
 
 use crate::state::State;
 use crossterm::{
@@ -24,12 +25,16 @@ use std::{
 };
 use tracing::error;
 
-use self::{tab_abnormality::TabAbnormality, tab_entity::TabEntity, tab_topic::TabTopic};
+use self::{
+    tab_abnormality::TabAbnormality, tab_reader::TabReader, tab_topic::TabTopic,
+    tab_writer::TabWriter,
+};
 
-const TAB_TITLES: &[&str] = &["Entities", "Topics", "Abnormalities"];
+const TAB_TITLES: &[&str] = &["Writers", "Reader", "Topics", "Abnormalities"];
 
 pub(crate) struct Tui {
-    tab_entity: TabEntity,
+    tab_writer: TabWriter,
+    tab_reader: TabReader,
     tab_topic: TabTopic,
     tab_abnormality: TabAbnormality,
     tick_dur: Duration,
@@ -43,9 +48,10 @@ impl Tui {
             tick_dur,
             state,
             tab_index: 0,
-            tab_entity: TabEntity::new(),
+            tab_writer: TabWriter::new(),
             tab_topic: TabTopic::new(),
             tab_abnormality: TabAbnormality::new(),
+            tab_reader: TabReader::new(),
         }
     }
 
@@ -185,63 +191,70 @@ impl Tui {
 
         // Render the tab content according to the current tab index.
         match self.tab_index {
-            0 => self.tab_entity.render(&state, frame, chunks[1]),
-            1 => self.tab_topic.render(&state, frame, chunks[1]),
-            2 => self.tab_abnormality.render(&state, frame, chunks[1]),
+            0 => self.tab_writer.render(&state, frame, chunks[1]),
+            1 => self.tab_reader.render(&state, frame, chunks[1]),
+            2 => self.tab_topic.render(&state, frame, chunks[1]),
+            3 => self.tab_abnormality.render(&state, frame, chunks[1]),
             _ => unreachable!(),
         }
     }
 
     fn key_up(&mut self) {
         match self.tab_index {
-            0 => self.tab_entity.previous_item(),
-            1 => self.tab_topic.previous_item(),
-            2 => self.tab_abnormality.previous_item(),
+            0 => self.tab_writer.previous_item(),
+            1 => self.tab_reader.previous_item(),
+            2 => self.tab_topic.previous_item(),
+            3 => self.tab_abnormality.previous_item(),
             _ => unreachable!(),
         }
     }
 
     fn key_down(&mut self) {
         match self.tab_index {
-            0 => self.tab_entity.next_item(),
-            1 => self.tab_topic.next_item(),
-            2 => self.tab_abnormality.next_item(),
+            0 => self.tab_writer.next_item(),
+            1 => self.tab_reader.next_item(),
+            2 => self.tab_topic.next_item(),
+            3 => self.tab_abnormality.next_item(),
             _ => unreachable!(),
         }
     }
 
     fn key_page_up(&mut self) {
         match self.tab_index {
-            0 => self.tab_entity.previous_page(),
-            1 => self.tab_topic.previous_page(),
-            2 => self.tab_abnormality.previous_page(),
+            0 => self.tab_writer.previous_page(),
+            1 => self.tab_reader.previous_page(),
+            2 => self.tab_topic.previous_page(),
+            3 => self.tab_abnormality.previous_page(),
             _ => unreachable!(),
         }
     }
 
     fn key_page_down(&mut self) {
         match self.tab_index {
-            0 => self.tab_entity.next_page(),
-            1 => self.tab_topic.next_page(),
-            2 => self.tab_abnormality.next_page(),
+            0 => self.tab_writer.next_page(),
+            1 => self.tab_reader.next_page(),
+            2 => self.tab_topic.next_page(),
+            3 => self.tab_abnormality.next_page(),
             _ => unreachable!(),
         }
     }
 
     fn key_home(&mut self) {
         match self.tab_index {
-            0 => self.tab_entity.first_item(),
-            1 => self.tab_topic.first_item(),
-            2 => self.tab_abnormality.first_item(),
+            0 => self.tab_writer.first_item(),
+            1 => self.tab_reader.first_item(),
+            2 => self.tab_topic.first_item(),
+            3 => self.tab_abnormality.first_item(),
             _ => unreachable!(),
         }
     }
 
     fn key_end(&mut self) {
         match self.tab_index {
-            0 => self.tab_entity.last_item(),
-            1 => self.tab_topic.last_item(),
-            2 => self.tab_abnormality.last_item(),
+            0 => self.tab_writer.last_item(),
+            1 => self.tab_reader.last_item(),
+            2 => self.tab_topic.last_item(),
+            3 => self.tab_abnormality.last_item(),
             _ => unreachable!(),
         }
     }

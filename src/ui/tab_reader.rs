@@ -1,5 +1,5 @@
 use crate::{
-    state::{Abnormality, State},
+    state::{HeartbeatState, ReaderState, State, WriterState},
     utils::GUIDExt,
 };
 use ratatui::{
@@ -12,11 +12,12 @@ use ratatui::{
 };
 use rustdds::GUID;
 
-pub(crate) struct TabAbnormality {
+pub(crate) struct TabReader {
     table_state: TableState,
     num_entries: usize,
 }
-impl TabAbnormality {
+
+impl TabReader {
     pub(crate) fn new() -> Self {
         Self {
             table_state: TableState::default(),
@@ -28,46 +29,31 @@ impl TabAbnormality {
     where
         B: Backend,
     {
-        const TITLE_WHEN: &str = "when";
-        const TITLE_WRITER_ID: &str = "writer";
-        const TITLE_READER_ID: &str = "reader";
-        const TITLE_TOPIC_NAME: &str = "topic";
-        const TITLE_DESC: &str = "desc";
+        const TITLE_GUID: &str = "GUID";
+        const TITLE_SERIAL_NUMBER: &str = "sn";
+        const TITLE_TOPIC: &str = "topic";
 
-        let mut abnormalities: Vec<_> = state.abnormalities.iter().collect();
-        abnormalities.sort_unstable_by(|lhs, rhs| lhs.when.cmp(&rhs.when).reverse());
+        let readers = state.participants.iter().flat_map(|(&guid_prefix, part)| {
+            part.readers.iter().map(move |(&entity_id, reader)| {
+                let guid = GUID::new(guid_prefix, entity_id);
+                (guid, reader)
+            })
+        });
 
-        let header = vec![
-            TITLE_WHEN,
-            TITLE_WRITER_ID,
-            TITLE_READER_ID,
-            TITLE_TOPIC_NAME,
-            TITLE_DESC,
-        ];
-        let rows: Vec<_> = abnormalities
-            .into_iter()
-            .map(|report| {
-                let Abnormality {
-                    when,
-                    writer_id,
-                    reader_id,
-                    ref topic_name,
-                    ref desc,
-                } = *report;
-                let guid_to_string = |guid: Option<GUID>| match guid {
-                    Some(guid) => format!("{}", guid.display()),
-                    None => "<none>".to_string(),
-                };
+        let header = vec![TITLE_GUID, TITLE_SERIAL_NUMBER, TITLE_TOPIC];
+        let rows: Vec<_> = readers
+            .clone()
+            .map(|(guid, entity)| {
+                let topic_name = entity.topic_name().unwrap_or("");
+                let ReaderState { last_sn, .. } = *entity;
 
-                let when = when.to_rfc3339();
-                let reader_id = guid_to_string(reader_id);
-                let writer_id = guid_to_string(writer_id);
-                let topic_name = topic_name
-                    .to_owned()
-                    .unwrap_or_else(|| "<none>".to_string());
-                let desc = desc.clone();
+                let guid = format!("{}", guid.display());
+                let topic_name = topic_name.to_string();
+                let last_sn = last_sn
+                    .map(|sn| format!("{}", sn.0))
+                    .unwrap_or_else(|| "-".to_string());
 
-                vec![when, writer_id, reader_id, topic_name, desc]
+                vec![guid, last_sn, topic_name]
             })
             .collect();
 
@@ -88,12 +74,11 @@ impl TabAbnormality {
         let header = Row::new(header);
         let rows: Vec<_> = rows.into_iter().map(Row::new).collect();
 
+        let table_block = Block::default().title("Readers").borders(Borders::ALL);
+
         // Save the # of entires
         self.num_entries = rows.len();
 
-        let table_block = Block::default()
-            .title("Abnormalities")
-            .borders(Borders::ALL);
         let table = Table::new(rows)
             .style(Style::default().fg(Color::White))
             .header(header)

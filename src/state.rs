@@ -14,25 +14,16 @@ use std::{
 /// The TUI state.
 #[derive(Debug)]
 pub(crate) struct State {
+    pub tick_since: Instant,
     pub participants: HashMap<GuidPrefix, ParticipantState>,
     pub topics: HashMap<String, TopicState>,
     pub abnormalities: Vec<Abnormality>,
 }
 
-impl State {
-    pub fn get_or_insert_entity(&mut self, guid: GUID) -> &mut EntityState {
-        self.participants
-            .entry(guid.prefix)
-            .or_default()
-            .entities
-            .entry(guid.entity_id)
-            .or_default()
-    }
-}
-
 impl Default for State {
     fn default() -> Self {
         Self {
+            tick_since: Instant::now(),
             participants: HashMap::new(),
             topics: HashMap::new(),
             abnormalities: vec![],
@@ -42,104 +33,92 @@ impl Default for State {
 
 #[derive(Debug)]
 pub struct ParticipantState {
-    pub entities: HashMap<EntityId, EntityState>,
+    pub writers: HashMap<EntityId, WriterState>,
+    pub readers: HashMap<EntityId, ReaderState>,
 }
 
 impl Default for ParticipantState {
     fn default() -> Self {
         Self {
-            entities: HashMap::new(),
+            writers: HashMap::new(),
+            readers: HashMap::new(),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct EntityState {
-    pub context: EntityContext,
+pub struct WriterState {
     pub last_sn: Option<SequenceNumber>,
     pub frag_messages: HashMap<SequenceNumber, FragmentedMessage>,
-    pub message_count: usize,
-    pub recv_count: usize,
-    pub since: Instant,
-    pub topic_name: Option<String>,
+    pub total_msg_count: usize,
+    pub total_byte_count: usize,
+    pub acc_msg_count: usize,
+    pub acc_byte_count: usize,
+    pub avg_msgrate: f64,
+    pub avg_bitrate: f64,
     pub heartbeat: Option<HeartbeatState>,
+    pub data: Option<DiscoveredWriterData>,
 }
 
-impl EntityState {
+impl WriterState {
     pub fn topic_name(&self) -> Option<&str> {
-        let EntityContext::Writer(ctx) = &self.context else {
-            return None;
-        };
-
-        let topic_name = &ctx.data.publication_topic_data.topic_name;
+        let topic_name = &self.data.as_ref()?.publication_topic_data.topic_name;
         Some(topic_name)
     }
-
-    pub fn recv_bitrate(&self) -> f64 {
-        let elapsed = self.since.elapsed();
-        self.recv_count as f64 * 8.0 / elapsed.as_secs_f64()
-    }
 }
 
-impl Default for EntityState {
+impl Default for WriterState {
     fn default() -> Self {
         Self {
-            // topic_info: None,
-            context: EntityContext::Unknown,
             frag_messages: HashMap::new(),
             last_sn: None,
-            message_count: 0,
-            recv_count: 0,
-            since: Instant::now(),
-            topic_name: None,
+            acc_msg_count: 0,
+            acc_byte_count: 0,
             heartbeat: None,
+            total_msg_count: 0,
+            total_byte_count: 0,
+            avg_bitrate: 0.0,
+            avg_msgrate: 0.0,
+            data: None,
         }
     }
 }
 
 #[derive(Debug)]
-pub enum EntityContext {
-    Unknown,
-    Writer(EntityWriterContext),
-    Reader(EntityReaderContext),
+pub struct ReaderState {
+    pub last_sn: Option<SequenceNumber>,
+    pub data: Option<DiscoveredReaderData>,
 }
 
-impl From<EntityReaderContext> for EntityContext {
-    fn from(v: EntityReaderContext) -> Self {
-        Self::Reader(v)
+impl ReaderState {
+    pub fn topic_name(&self) -> Option<&str> {
+        let topic_name = self.data.as_ref()?.subscription_topic_data.topic_name();
+        Some(topic_name)
     }
 }
 
-impl From<EntityWriterContext> for EntityContext {
-    fn from(v: EntityWriterContext) -> Self {
-        Self::Writer(v)
+impl Default for ReaderState {
+    fn default() -> Self {
+        Self {
+            last_sn: None,
+            data: None,
+        }
     }
-}
-
-impl EntityContext {
-    /// Returns `true` if the entity context is [`Unknown`].
-    ///
-    /// [`Unknown`]: EntityContext::Unknown
-    #[must_use]
-    pub fn is_unknown(&self) -> bool {
-        matches!(self, Self::Unknown)
-    }
-}
-
-#[derive(Debug)]
-pub struct EntityWriterContext {
-    pub data: DiscoveredWriterData,
-}
-
-#[derive(Debug)]
-pub struct EntityReaderContext {
-    pub data: DiscoveredReaderData,
 }
 
 #[derive(Debug)]
 pub struct TopicState {
     pub readers: HashSet<GUID>,
     pub writers: HashSet<GUID>,
+}
+
+impl Default for TopicState {
+    fn default() -> Self {
+        Self {
+            readers: HashSet::new(),
+            writers: HashSet::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
