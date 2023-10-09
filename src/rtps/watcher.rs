@@ -25,7 +25,7 @@ use rustdds::{
         Message, SubMessage, SubmessageBody,
     },
     structure::{guid::EntityId, sequence_number::FragmentNumber},
-    GUID,
+    SequenceNumber, GUID,
 };
 use serde::Deserialize;
 use std::{
@@ -356,19 +356,25 @@ fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -
     let AckNack {
         reader_id,
         writer_id,
-        // ref reader_sn_state,
+        ref reader_sn_state,
         count,
         ..
     } = *data;
-    let writer_id = GUID::new(guid_prefix, writer_id);
+
     let reader_id = GUID::new(guid_prefix, reader_id);
+    let base_sn = reader_sn_state.base().0;
+    let missing_sn: Vec<_> = reader_sn_state
+        .iter()
+        .map(|SequenceNumber(sn)| sn)
+        .collect();
 
     // println!("ack_nack {}\t{reader_sn_state:?}", writer_id.display());
 
     AckNackEvent {
-        writer_id,
         reader_id,
         count,
+        missing_sn,
+        base_sn,
     }
     .into()
 }

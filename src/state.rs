@@ -86,8 +86,12 @@ impl Default for WriterState {
 
 #[derive(Debug)]
 pub struct ReaderState {
-    pub last_sn: Option<SequenceNumber>,
     pub data: Option<DiscoveredReaderData>,
+    pub acknack: Option<AckNackState>,
+    pub last_sn: Option<i64>,
+    pub total_acknack_count: usize,
+    pub acc_acknack_count: usize,
+    pub avg_acknack_rate: f64,
 }
 
 impl ReaderState {
@@ -102,6 +106,10 @@ impl Default for ReaderState {
         Self {
             last_sn: None,
             data: None,
+            acknack: None,
+            total_acknack_count: 0,
+            acc_acknack_count: 0,
+            avg_acknack_rate: 0.0,
         }
     }
 }
@@ -165,4 +173,11 @@ pub struct Abnormality {
     pub reader_id: Option<GUID>,
     pub topic_name: Option<String>,
     pub desc: String,
+}
+
+#[derive(Debug)]
+pub struct AckNackState {
+    pub missing_sn: Vec<i64>,
+    pub count: i32,
+    pub since: Instant,
 }

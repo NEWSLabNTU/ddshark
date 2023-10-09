@@ -141,9 +141,10 @@ pub struct HeartbeatEvent {
 
 #[derive(Debug, Clone)]
 pub struct AckNackEvent {
-    pub writer_id: GUID,
     pub reader_id: GUID,
     pub count: i32,
+    pub base_sn: i64,
+    pub missing_sn: Vec<i64>,
 }
 
 #[derive(Debug, Clone)]

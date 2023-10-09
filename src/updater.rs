@@ -5,7 +5,7 @@ use crate::{
     },
     opts::Opts,
     otlp,
-    state::{Abnormality, FragmentedMessage, HeartbeatState, State},
+    state::{Abnormality, AckNackState, FragmentedMessage, HeartbeatState, State},
 };
 use chrono::Local;
 use std::{
@@ -105,16 +105,24 @@ impl Updater {
         state.tick_since = now;
 
         for participant in state.participants.values_mut() {
-            for entity in participant.writers.values_mut() {
+            for writer in participant.writers.values_mut() {
                 // update average bitrate
-                let curr_bitrate = (entity.acc_byte_count * 8) as f64 / elapsed_secs;
-                entity.avg_bitrate = entity.avg_bitrate * ALPHA + curr_bitrate * (1.0 - ALPHA);
-                entity.acc_byte_count = 0;
+                let curr_bitrate = (writer.acc_byte_count * 8) as f64 / elapsed_secs;
+                writer.avg_bitrate = writer.avg_bitrate * ALPHA + curr_bitrate * (1.0 - ALPHA);
+                writer.acc_byte_count = 0;
 
                 // update average msgrate
-                let curr_msgrate = entity.acc_msg_count as f64 / elapsed_secs;
-                entity.avg_msgrate = entity.avg_msgrate * ALPHA + curr_msgrate * (1.0 - ALPHA);
-                entity.acc_msg_count = 0;
+                let curr_msgrate = writer.acc_msg_count as f64 / elapsed_secs;
+                writer.avg_msgrate = writer.avg_msgrate * ALPHA + curr_msgrate * (1.0 - ALPHA);
+                writer.acc_msg_count = 0;
+            }
+
+            for readers in participant.readers.values_mut() {
+                // update average acknack rate
+                let curr_rate = readers.acc_acknack_count as f64 / elapsed_secs;
+                readers.avg_acknack_rate =
+                    readers.avg_acknack_rate * ALPHA + curr_rate * (1.0 - ALPHA);
+                readers.acc_acknack_count = 0;
             }
         }
     }
@@ -428,7 +436,43 @@ impl Updater {
         }
     }
 
-    fn handle_ack_nack_event(&self, state: &mut State, event: &AckNackEvent) {}
+    fn handle_ack_nack_event(&self, state: &mut State, event: &AckNackEvent) {
+        // let AckNackEvent {
+        //     reader_id,
+        //     count,
+        //     base_sn,
+        //     ref missing_sn,
+        // } = *event;
+
+        let participant = state
+            .participants
+            .entry(event.reader_id.prefix)
+            .or_default();
+        let reader = participant
+            .readers
+            .entry(event.reader_id.entity_id)
+            .or_default();
+
+        // Update traffic statistics
+        reader.total_acknack_count += 1;
+        reader.acc_acknack_count += 1;
+
+        // Save missing sequence numbers
+        if let Some(acknack) = &reader.acknack {
+            if acknack.count >= event.count {
+                return;
+            }
+        }
+
+        reader.acknack = Some(AckNackState {
+            missing_sn: event.missing_sn.to_vec(),
+            count: event.count,
+            since: Instant::now(),
+        });
+
+        // Update last sn
+        reader.last_sn = Some(event.base_sn);
+    }
 
     fn handle_nack_frag_event(&self, state: &mut State, event: &NackFragEvent) {}
 

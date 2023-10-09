@@ -1,5 +1,5 @@
 use crate::{
-    state::{HeartbeatState, ReaderState, State, WriterState},
+    state::{ReaderState, State},
     utils::GUIDExt,
 };
 use ratatui::{
@@ -30,7 +30,10 @@ impl TabReader {
         B: Backend,
     {
         const TITLE_GUID: &str = "GUID";
-        const TITLE_SERIAL_NUMBER: &str = "sn";
+        const TITLE_LAST_SN: &str = "sn";
+        const TITLE_MISSING_SN: &str = "missing_sn";
+        const TITLE_TOTAL_ACKNACK_COUNT: &str = "acks";
+        const TITLE_AVERAGE_ACKNACK_RATE: &str = "ack_rate";
         const TITLE_TOPIC: &str = "topic";
 
         let readers = state.participants.iter().flat_map(|(&guid_prefix, part)| {
@@ -40,20 +43,40 @@ impl TabReader {
             })
         });
 
-        let header = vec![TITLE_GUID, TITLE_SERIAL_NUMBER, TITLE_TOPIC];
+        let header = vec![
+            TITLE_GUID,
+            TITLE_LAST_SN,
+            TITLE_MISSING_SN,
+            TITLE_TOTAL_ACKNACK_COUNT,
+            TITLE_AVERAGE_ACKNACK_RATE,
+            TITLE_TOPIC,
+        ];
         let rows: Vec<_> = readers
             .clone()
             .map(|(guid, entity)| {
                 let topic_name = entity.topic_name().unwrap_or("");
-                let ReaderState { last_sn, .. } = *entity;
+                let ReaderState {
+                    last_sn,
+                    total_acknack_count,
+                    avg_acknack_rate,
+                    ref acknack,
+                    ..
+                } = *entity;
 
                 let guid = format!("{}", guid.display());
+                let sn = match last_sn {
+                    Some(sn) => format!("{sn}"),
+                    None => "-".to_string(),
+                };
                 let topic_name = topic_name.to_string();
-                let last_sn = last_sn
-                    .map(|sn| format!("{}", sn.0))
-                    .unwrap_or_else(|| "-".to_string());
+                let missing_sn = match acknack {
+                    Some(acknack) => format!("{:?}", acknack.missing_sn),
+                    None => "-".to_string(),
+                };
+                let total_acks = format!("{total_acknack_count}");
+                let avg_ack_rate = format!("{avg_acknack_rate:.2}");
 
-                vec![guid, last_sn, topic_name]
+                vec![guid, sn, missing_sn, total_acks, avg_ack_rate, topic_name]
             })
             .collect();
 
