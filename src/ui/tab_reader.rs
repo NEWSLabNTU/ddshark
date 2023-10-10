@@ -24,7 +24,6 @@ impl ReaderTable {
         let rows: Vec<_> = readers
             .clone()
             .map(|(guid, entity)| {
-                let topic_name = entity.topic_name().unwrap_or("");
                 let ReaderState {
                     last_sn,
                     total_acknack_count,
@@ -38,7 +37,8 @@ impl ReaderTable {
                     Some(sn) => format!("{sn}"),
                     None => "-".to_string(),
                 };
-                let topic_name = topic_name.to_string();
+                let type_name = entity.type_name().unwrap_or("").to_string();
+                let topic_name = entity.topic_name().unwrap_or("").to_string();
                 let missing_sn = match acknack {
                     Some(acknack) => format!("{:?}", acknack.missing_sn),
                     None => "-".to_string(),
@@ -46,7 +46,15 @@ impl ReaderTable {
                 let total_acks = format!("{total_acknack_count}");
                 let avg_ack_rate = format!("{avg_acknack_rate:.2}");
 
-                vec![guid, sn, missing_sn, total_acks, avg_ack_rate, topic_name]
+                vec![
+                    guid,
+                    sn,
+                    missing_sn,
+                    total_acks,
+                    avg_ack_rate,
+                    type_name,
+                    topic_name,
+                ]
             })
             .collect();
 
@@ -63,6 +71,7 @@ impl StatefulWidget for ReaderTable {
         const TITLE_MISSING_SN: &str = "missing_sn";
         const TITLE_TOTAL_ACKNACK_COUNT: &str = "acks";
         const TITLE_AVERAGE_ACKNACK_RATE: &str = "ack_rate";
+        const TITLE_TYPE: &str = "type";
         const TITLE_TOPIC: &str = "topic";
 
         let header = vec![
@@ -71,6 +80,7 @@ impl StatefulWidget for ReaderTable {
             TITLE_MISSING_SN,
             TITLE_TOTAL_ACKNACK_COUNT,
             TITLE_AVERAGE_ACKNACK_RATE,
+            TITLE_TYPE,
             TITLE_TOPIC,
         ];
 

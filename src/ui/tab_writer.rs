@@ -27,8 +27,7 @@ impl WriterTable {
 
         let rows: Vec<_> = writers
             .into_iter()
-            .map(|(guid, entity)| {
-                let topic_name = entity.topic_name().unwrap_or("");
+            .map(|(guid, writer)| {
                 let WriterState {
                     last_sn,
                     ref frag_messages,
@@ -38,10 +37,11 @@ impl WriterTable {
                     avg_msgrate,
                     ref heartbeat,
                     ..
-                } = *entity;
+                } = *writer;
 
                 let guid = format!("{}", guid.display());
-                let topic_name = topic_name.to_string();
+                let topic_name = writer.topic_name().unwrap_or("").to_string();
+                let type_name = writer.type_name().unwrap_or("-").to_string();
                 let byte_count = format!("{total_byte_count}");
                 let message_count = format!("{total_msg_count}");
                 let avg_bitrate = format!("{avg_bitrate:.2}");
@@ -74,6 +74,7 @@ impl WriterTable {
                     avg_bitrate,
                     frag_msg_count,
                     heartbeat_range,
+                    type_name,
                     topic_name,
                 ]
             })
@@ -89,6 +90,7 @@ impl StatefulWidget for WriterTable {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         const TITLE_GUID: &str = "GUID";
         const TITLE_TOPIC: &str = "topic";
+        const TITLE_TYPE: &str = "type";
         const TITLE_SERIAL_NUMBER: &str = "sn";
         const TITLE_MESSAGE_COUNT: &str = "msgs";
         const TITLE_BYTE_COUNT: &str = "bytes";
@@ -106,6 +108,7 @@ impl StatefulWidget for WriterTable {
             TITLE_BITRATE,
             TITLE_NUM_FRAGMENTED_MESSAGES,
             TITLE_HEARTBEAT,
+            TITLE_TYPE,
             TITLE_TOPIC,
         ];
 

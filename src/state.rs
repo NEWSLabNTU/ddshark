@@ -65,6 +65,11 @@ impl WriterState {
         let topic_name = &self.data.as_ref()?.publication_topic_data.topic_name;
         Some(topic_name)
     }
+
+    pub fn type_name(&self) -> Option<&str> {
+        let type_name = &self.data.as_ref()?.publication_topic_data.type_name;
+        Some(type_name)
+    }
 }
 
 impl Default for WriterState {
@@ -98,6 +103,11 @@ impl ReaderState {
     pub fn topic_name(&self) -> Option<&str> {
         let topic_name = self.data.as_ref()?.subscription_topic_data.topic_name();
         Some(topic_name)
+    }
+
+    pub fn type_name(&self) -> Option<&str> {
+        let type_name = self.data.as_ref()?.subscription_topic_data.type_name();
+        Some(type_name)
     }
 }
 
