@@ -14,6 +14,8 @@ use std::{
 };
 use tracing::{debug, error, warn};
 
+const TICK_INTERVAL: Duration = Duration::from_millis(1000);
+
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
     state: Arc<Mutex<State>>,
@@ -40,9 +42,7 @@ impl Updater {
     }
 
     pub(crate) fn run(self) {
-        const INTERVAL: Duration = Duration::from_millis(100);
-
-        let mut deadline = Instant::now() + INTERVAL;
+        let mut deadline = Instant::now() + TICK_INTERVAL;
         loop {
             use flume::RecvTimeoutError as E;
 
@@ -50,11 +50,11 @@ impl Updater {
                 Ok(evt) => evt,
                 Err(E::Disconnected) => break,
                 Err(E::Timeout) => {
-                    deadline += INTERVAL;
+                    deadline += TICK_INTERVAL;
 
                     let now = Instant::now();
                     while now >= deadline {
-                        deadline += INTERVAL;
+                        deadline += TICK_INTERVAL;
                     }
 
                     UpdateEvent::Tick
@@ -98,7 +98,7 @@ impl Updater {
     }
 
     fn handle_tick(&self, state: &mut State) {
-        const ALPHA: f64 = 0.1;
+        const ALPHA: f64 = 0.9;
 
         let now = Instant::now();
         let elapsed_secs = state.tick_since.elapsed().as_secs_f64();

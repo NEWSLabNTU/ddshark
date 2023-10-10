@@ -13,7 +13,7 @@ use std::{
 
 /// The TUI state.
 #[derive(Debug)]
-pub(crate) struct State {
+pub struct State {
     pub tick_since: Instant,
     pub participants: HashMap<GuidPrefix, ParticipantState>,
     pub topics: HashMap<String, TopicState>,

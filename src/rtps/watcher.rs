@@ -355,7 +355,6 @@ fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -
     let guid_prefix = msg.header.guid_prefix;
     let AckNack {
         reader_id,
-        writer_id,
         ref reader_sn_state,
         count,
         ..

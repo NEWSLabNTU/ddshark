@@ -1,64 +1,32 @@
+use super::xtable::XTableState;
 use crate::{
     state::{HeartbeatState, State, WriterState},
+    ui::xtable::XTable,
     utils::GUIDExt,
 };
-use ratatui::{
-    backend::Backend,
-    layout::Constraint,
-    prelude::Rect,
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Row, Table, TableState},
-    Frame,
-};
+use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::GUID;
 
-pub(crate) struct TabWriter {
-    table_state: TableState,
-    num_entries: usize,
+pub struct WriterTable {
+    rows: Vec<Vec<String>>,
 }
 
-impl TabWriter {
-    pub(crate) fn new() -> Self {
-        Self {
-            table_state: TableState::default(),
-            num_entries: 0,
-        }
-    }
-
-    pub(crate) fn render<B>(&mut self, state: &State, frame: &mut Frame<B>, rect: Rect)
-    where
-        B: Backend,
-    {
-        const TITLE_GUID: &str = "GUID";
-        const TITLE_TOPIC: &str = "topic";
-        const TITLE_SERIAL_NUMBER: &str = "sn";
-        const TITLE_MESSAGE_COUNT: &str = "msgs";
-        const TITLE_BYTE_COUNT: &str = "bytes";
-        const TITLE_MSGRATE: &str = "msgrate";
-        const TITLE_BITRATE: &str = "bitrate";
-        const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "unfrag_msgs";
-        const TITLE_HEARTBEAT: &str = "cached_sn";
-
-        let writers = state.participants.iter().flat_map(|(&guid_prefix, part)| {
-            part.writers.iter().map(move |(&entity_id, writer)| {
-                let guid = GUID::new(guid_prefix, entity_id);
-                (guid, writer)
+impl WriterTable {
+    pub fn new(state: &State) -> Self {
+        let mut writers: Vec<_> = state
+            .participants
+            .iter()
+            .flat_map(|(&guid_prefix, part)| {
+                part.writers.iter().map(move |(&entity_id, writer)| {
+                    let guid = GUID::new(guid_prefix, entity_id);
+                    (guid, writer)
+                })
             })
-        });
+            .collect();
+        writers.sort_unstable_by(|(lid, _), (rid, _)| lid.cmp(rid));
 
-        let header = vec![
-            TITLE_GUID,
-            TITLE_SERIAL_NUMBER,
-            TITLE_MESSAGE_COUNT,
-            TITLE_MSGRATE,
-            TITLE_BYTE_COUNT,
-            TITLE_BITRATE,
-            TITLE_NUM_FRAGMENTED_MESSAGES,
-            TITLE_HEARTBEAT,
-            TITLE_TOPIC,
-        ];
         let rows: Vec<_> = writers
-            .clone()
+            .into_iter()
             .map(|(guid, entity)| {
                 let topic_name = entity.topic_name().unwrap_or("");
                 let WriterState {
@@ -111,89 +79,73 @@ impl TabWriter {
             })
             .collect();
 
-        let widths: Vec<_> = header
-            .iter()
-            .enumerate()
-            .map(|(idx, title)| {
-                let max_len = rows
-                    .iter()
-                    .map(|row| row[idx].len())
-                    .max()
-                    .unwrap_or(0)
-                    .max(title.len());
-                Constraint::Max(max_len as u16)
-            })
-            .collect();
+        Self { rows }
+    }
+}
 
-        let header = Row::new(header);
-        let rows: Vec<_> = rows.into_iter().map(Row::new).collect();
+impl StatefulWidget for WriterTable {
+    type State = WriterTableState;
 
-        let table_block = Block::default().title("Writers").borders(Borders::ALL);
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        const TITLE_GUID: &str = "GUID";
+        const TITLE_TOPIC: &str = "topic";
+        const TITLE_SERIAL_NUMBER: &str = "sn";
+        const TITLE_MESSAGE_COUNT: &str = "msgs";
+        const TITLE_BYTE_COUNT: &str = "bytes";
+        const TITLE_MSGRATE: &str = "msgrate";
+        const TITLE_BITRATE: &str = "bitrate";
+        const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "unfrag_msgs";
+        const TITLE_HEARTBEAT: &str = "cached_sn";
 
-        // Save the # of entires
-        self.num_entries = rows.len();
+        let header = vec![
+            TITLE_GUID,
+            TITLE_SERIAL_NUMBER,
+            TITLE_MESSAGE_COUNT,
+            TITLE_MSGRATE,
+            TITLE_BYTE_COUNT,
+            TITLE_BITRATE,
+            TITLE_NUM_FRAGMENTED_MESSAGES,
+            TITLE_HEARTBEAT,
+            TITLE_TOPIC,
+        ];
 
-        let table = Table::new(rows)
-            .style(Style::default().fg(Color::White))
-            .header(header)
-            .block(table_block)
-            .widths(&widths)
-            .column_spacing(1)
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-            .highlight_symbol(">");
+        let table = XTable::new("Writers", &header, &self.rows);
+        table.render(area, buf, &mut state.table_state);
+    }
+}
 
-        frame.render_stateful_widget(table, rect, &mut self.table_state);
+pub struct WriterTableState {
+    table_state: XTableState,
+}
+
+impl WriterTableState {
+    pub fn new() -> Self {
+        let table_state = XTableState::new();
+
+        Self { table_state }
     }
 
-    pub(crate) fn previous_item(&mut self) {
-        if self.num_entries > 0 {
-            let new_idx = match self.table_state.selected() {
-                Some(idx) => idx.saturating_sub(1),
-                None => 0,
-            };
-            self.table_state.select(Some(new_idx));
-        }
+    pub fn previous_item(&mut self) {
+        self.table_state.previous_item();
     }
 
-    pub(crate) fn next_item(&mut self) {
-        if let Some(last_idx) = self.num_entries.checked_sub(1) {
-            let new_idx = match self.table_state.selected() {
-                Some(idx) => idx.saturating_add(1).min(last_idx),
-                None => 0,
-            };
-            self.table_state.select(Some(new_idx));
-        }
+    pub fn next_item(&mut self) {
+        self.table_state.next_item();
     }
 
-    pub(crate) fn previous_page(&mut self) {
-        if self.num_entries > 0 {
-            let new_idx = match self.table_state.selected() {
-                Some(idx) => idx.saturating_sub(30),
-                None => 0,
-            };
-            self.table_state.select(Some(new_idx));
-        }
+    pub fn previous_page(&mut self) {
+        self.table_state.previous_page();
     }
 
-    pub(crate) fn next_page(&mut self) {
-        if let Some(last_idx) = self.num_entries.checked_sub(1) {
-            let new_idx = match self.table_state.selected() {
-                Some(idx) => idx.saturating_add(30).min(last_idx),
-                None => 0,
-            };
-            self.table_state.select(Some(new_idx));
-        }
+    pub fn next_page(&mut self) {
+        self.table_state.next_page();
     }
 
-    pub(crate) fn first_item(&mut self) {
-        if self.num_entries > 0 {
-            self.table_state.select(Some(0));
-        }
+    pub fn first_item(&mut self) {
+        self.table_state.first_item();
     }
 
-    pub(crate) fn last_item(&mut self) {
-        if let Some(idx) = self.num_entries.checked_sub(1) {
-            self.table_state.select(Some(idx));
-        }
+    pub fn last_item(&mut self) {
+        self.table_state.last_item();
     }
 }

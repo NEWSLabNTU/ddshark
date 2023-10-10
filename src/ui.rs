@@ -2,6 +2,7 @@ mod tab_abnormality;
 mod tab_reader;
 mod tab_topic;
 mod tab_writer;
+mod xtable;
 
 use crate::state::State;
 use crossterm::{
@@ -26,17 +27,19 @@ use std::{
 use tracing::error;
 
 use self::{
-    tab_abnormality::TabAbnormality, tab_reader::TabReader, tab_topic::TabTopic,
-    tab_writer::TabWriter,
+    tab_abnormality::{AbnormalityTable, AbnormalityTableState},
+    tab_reader::{ReaderTable, ReaderTableState},
+    tab_topic::{TopicTable, TopicTableState},
+    tab_writer::{WriterTable, WriterTableState},
 };
 
 const TAB_TITLES: &[&str] = &["Writers", "Reader", "Topics", "Abnormalities"];
 
 pub(crate) struct Tui {
-    tab_writer: TabWriter,
-    tab_reader: TabReader,
-    tab_topic: TabTopic,
-    tab_abnormality: TabAbnormality,
+    tab_writer: WriterTableState,
+    tab_reader: ReaderTableState,
+    tab_topic: TopicTableState,
+    tab_abnormality: AbnormalityTableState,
     tick_dur: Duration,
     tab_index: usize,
     state: Arc<Mutex<State>>,
@@ -48,10 +51,10 @@ impl Tui {
             tick_dur,
             state,
             tab_index: 0,
-            tab_writer: TabWriter::new(),
-            tab_topic: TabTopic::new(),
-            tab_abnormality: TabAbnormality::new(),
-            tab_reader: TabReader::new(),
+            tab_writer: WriterTableState::new(),
+            tab_topic: TopicTableState::new(),
+            tab_abnormality: AbnormalityTableState::new(),
+            tab_reader: ReaderTableState::new(),
         }
     }
 
@@ -125,14 +128,8 @@ impl Tui {
                     C::Down => {
                         self.key_down();
                     }
-                    C::Left => {
-                        // *self.table_state.offset_mut() =
-                        //     self.table_state.offset().saturating_sub(1);
-                    }
-                    C::Right => {
-                        // *self.table_state.offset_mut() =
-                        //     self.table_state.offset().saturating_add(1);
-                    }
+                    C::Left => {}
+                    C::Right => {}
                     C::PageUp => {
                         self.key_page_up();
                     }
@@ -191,10 +188,26 @@ impl Tui {
 
         // Render the tab content according to the current tab index.
         match self.tab_index {
-            0 => self.tab_writer.render(&state, frame, chunks[1]),
-            1 => self.tab_reader.render(&state, frame, chunks[1]),
-            2 => self.tab_topic.render(&state, frame, chunks[1]),
-            3 => self.tab_abnormality.render(&state, frame, chunks[1]),
+            0 => frame.render_stateful_widget(
+                WriterTable::new(&state),
+                chunks[1],
+                &mut self.tab_writer,
+            ),
+            1 => frame.render_stateful_widget(
+                ReaderTable::new(&state),
+                chunks[1],
+                &mut self.tab_reader,
+            ),
+            2 => frame.render_stateful_widget(
+                TopicTable::new(&state),
+                chunks[1],
+                &mut self.tab_topic,
+            ),
+            3 => frame.render_stateful_widget(
+                AbnormalityTable::new(&state),
+                chunks[1],
+                &mut self.tab_abnormality,
+            ),
             _ => unreachable!(),
         }
     }
