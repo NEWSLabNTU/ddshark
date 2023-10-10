@@ -1,9 +1,14 @@
 # ddshark
 
-Live monitoring tool for Cyclone DDS. It is a work from NEWSLAB,
-National Taiwan University.
+Live monitoring tool for RTPS protocol. It is independent of DDS
+implementations and was tested with Cyclone DDS.
+
+[![asciicast](https://asciinema.org/a/612998.svg)](https://asciinema.org/a/612998)
 
 **Authors**
+
+This software was developed by NEWSLAB, Depart. of CSIE, National
+Taiwan University.
 
 - Hsiang-Jui Lin (2023)
 - Taiyou Kuo (2023)
@@ -14,9 +19,8 @@ National Taiwan University.
 Download the source code using git.
 
 ```bash
-git clone https://github.com/jerry73204/ddshark.git
+git clone https://github.com/jerry73204/ddshark.git --recurse-submodules
 cd ddshark
-git submodule update --init --recursive
 ```
 
 Build this project using `cargo`. You can install the Rust toolchain
