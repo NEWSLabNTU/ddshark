@@ -258,7 +258,7 @@ impl Tui {
         let text = format!(
             "\
             ddshark {}
-- (C) 2023 Lin Hsiang-Jui
+- (C) 2023 Lin Hsiang-Jui, Taiyou Kuo
 - (C) 2023 NEWSLAB, Depart. of CSIE, National Taiwan University
 
 TAB       Next tab
