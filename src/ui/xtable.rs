@@ -2,7 +2,7 @@ use ratatui::{
     layout::Constraint,
     prelude::{Rect, *},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Row, StatefulWidget, Table, TableState},
+    widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, TableState},
 };
 
 pub struct XTable<'a> {
@@ -41,7 +41,14 @@ impl<'a> StatefulWidget for XTable<'a> {
             })
             .collect();
 
-        let header = Row::new(self.header.iter().cloned());
+        let header = Row::new(self.header.iter().map(|title| {
+            let cell: Cell = title.to_string().into();
+            cell.style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::UNDERLINED),
+            )
+        }));
         let rows: Vec<_> = self
             .rows
             .iter()
@@ -59,7 +66,7 @@ impl<'a> StatefulWidget for XTable<'a> {
             .header(header)
             .block(table_block)
             .widths(&widths)
-            .column_spacing(1)
+            .column_spacing(2)
             .highlight_style(Style::default().add_modifier(Modifier::BOLD))
             .highlight_symbol(">");
 

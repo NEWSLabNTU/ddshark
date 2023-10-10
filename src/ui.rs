@@ -14,9 +14,10 @@ use crossterm::{
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
+    prelude::*,
     style::{Color, Style},
     symbols::DOT,
-    widgets::{Block, Borders, Tabs},
+    widgets::{Block, Borders, Clear, Paragraph, Tabs},
     Frame, Terminal,
 };
 use std::{
@@ -45,6 +46,7 @@ pub(crate) struct Tui {
     tab_abnormality: AbnormalityTableState,
     tick_dur: Duration,
     tab_index: usize,
+    focus: Focus,
     state: Arc<Mutex<State>>,
 }
 
@@ -59,6 +61,7 @@ impl Tui {
             tab_abnormality: AbnormalityTableState::new(),
             tab_reader: ReaderTableState::new(),
             tab_stat: StatTableState::new(),
+            focus: Focus::Dashboard,
         }
     }
 
@@ -68,6 +71,8 @@ impl Tui {
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
+
+        terminal.clear()?;
 
         self.run_loop(&mut terminal)?;
 
@@ -107,7 +112,7 @@ impl Tui {
             let elapsed_time = last_tick.elapsed();
             if elapsed_time >= self.tick_dur {
                 // Draw UI
-                terminal.draw(|frame| self.draw_ui(frame, elapsed_time))?;
+                terminal.draw(|frame| self.render(frame))?;
 
                 // Clean up state
                 last_tick = Instant::now();
@@ -125,7 +130,11 @@ impl Tui {
                 let n_tabs = TAB_TITLES.len();
 
                 match key.code {
-                    C::Char('q') => return Ok(ControlFlow::Break(())),
+                    C::Char('q') => match self.focus {
+                        Focus::Dashboard => return Ok(ControlFlow::Break(())),
+                        Focus::Help => self.focus = Focus::Dashboard,
+                    },
+                    C::Char('h') => self.focus = Focus::Help,
                     C::Up => {
                         self.key_up();
                     }
@@ -162,7 +171,7 @@ impl Tui {
         Ok(ControlFlow::Continue(()))
     }
 
-    fn draw_ui<B>(&mut self, frame: &mut Frame<B>, _elapsed_time: Duration)
+    fn render<B>(&mut self, frame: &mut Frame<B>)
     where
         B: Backend,
     {
@@ -176,12 +185,12 @@ impl Tui {
         // Split the screen vertically into two chunks.
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .margin(1)
-            .constraints([Constraint::Percentage(20), Constraint::Percentage(80)].as_ref())
+            .margin(0)
+            .constraints([Constraint::Min(3), Constraint::Min(1)].as_ref())
             .split(frame.size());
 
         // Build the container for tabs
-        let tabs_block = Block::default().title("Tabs").borders(Borders::ALL);
+        let tabs_block = Block::default().borders(Borders::ALL);
         let tabs = Tabs::new(TAB_TITLES.to_vec())
             .block(tabs_block)
             .style(Style::default().fg(Color::White))
@@ -208,8 +217,9 @@ impl Tui {
                 &mut self.tab_topic,
             ),
             3 => {
-                frame.render_stateful_widget(StatTable::new(&state), chunks[1], &mut self.tab_stat)
+                frame.render_stateful_widget(StatTable::new(&state), chunks[1], &mut self.tab_stat);
             }
+
             4 => frame.render_stateful_widget(
                 AbnormalityTable::new(&state),
                 chunks[1],
@@ -217,6 +227,48 @@ impl Tui {
             ),
             _ => unreachable!(),
         }
+
+        // Render dialogs
+        match self.focus {
+            Focus::Dashboard => {}
+            Focus::Help => {
+                Self::render_help_dialog(frame);
+            }
+        }
+    }
+
+    fn render_help_dialog<B>(frame: &mut Frame<B>)
+    where
+        B: Backend,
+    {
+        let text = format!(
+            "\
+            ddshark {}
+- (C) 2023 Lin Hsiang-Jui
+- (C) 2023 NEWSLAB, Depart. of CSIE, National Taiwan University
+
+TAB       Next tab
+Shift+TAB Previous tab
+↑         Previous item
+↓         Next item
+PageUp    Previous page
+PageDown  Next page
+h         Show help
+a         Close dialog or exit
+q         Close dialog or exit
+",
+            env!("CARGO_PKG_VERSION")
+        );
+
+        let area = centered_rect(50, 50, frame.size());
+        let block = Block::default()
+            .title("Help")
+            .borders(Borders::ALL)
+            .on_blue();
+        let dialog = Paragraph::new(text).block(block);
+
+        frame.render_widget(Clear, area);
+        frame.render_widget(dialog, area);
     }
 
     fn key_up(&mut self) {
@@ -284,4 +336,30 @@ impl Tui {
             _ => unreachable!(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Focus {
+    Dashboard,
+    Help,
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
