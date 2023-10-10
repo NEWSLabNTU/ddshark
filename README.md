@@ -19,22 +19,31 @@ cd ddshark
 git submodule update --init --recursive
 ```
 
-Build this project using `cargo`. You may install the Rust toolchain
-from [rustup.rs](https://rustup.rs/) to get `cargo`.
+Build this project using `cargo`. You can install the Rust toolchain
+from [rustup.rs](https://rustup.rs/) to get `cargo`. The compiled
+binary will be located at `./target/release/ddshark`.
 
 
-```bash
-cargo build            # debug build, or
-cargo build --release  # release build
+```sh
+cargo build --release
 ```
 
-The compiled binary will be located at `./target/debug/ddshark` or
-`./target/release/ddshark`, depending on your compilation profile.
 
-```bash
-./target/debug/ddshark -i eno1            # Watch an network interface
+Specify `-i <INC>` to scan RTPS packets from a network interface. You
+may run with `sudo` to grant the permission for packet capture.
+
+```sh
+sudo ./target/release/ddshark -i eno1          # Watch an network interface
+```
+
+
+It also supports offline mode. Specify `-f <FILE>` to read packets
+from a pre-recorded .pcap file.
+
+```sh
 ./target/release/ddshark -f packets.pcap  # Read from a .pcap dump
 ```
+
 
 ## License
 
