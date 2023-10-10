@@ -86,33 +86,33 @@ pub struct RtpsEvent {
 
 #[derive(Debug, Clone)]
 pub enum DataPayload {
-    DiscoveredTopic(Box<DiscoveredTopicData>),
-    DiscoveredWriter(Box<DiscoveredWriterData>),
-    DiscoveredReader(Box<DiscoveredReaderData>),
-    DiscoveredParticipant(Box<SpdpDiscoveredParticipantData>),
+    Topic(Box<DiscoveredTopicData>),
+    Writer(Box<DiscoveredWriterData>),
+    Reader(Box<DiscoveredReaderData>),
+    Participant(Box<SpdpDiscoveredParticipantData>),
 }
 
 impl From<SpdpDiscoveredParticipantData> for DataPayload {
     fn from(v: SpdpDiscoveredParticipantData) -> Self {
-        Self::DiscoveredParticipant(Box::new(v))
+        Self::Participant(Box::new(v))
     }
 }
 
 impl From<DiscoveredReaderData> for DataPayload {
     fn from(v: DiscoveredReaderData) -> Self {
-        Self::DiscoveredReader(Box::new(v))
+        Self::Reader(Box::new(v))
     }
 }
 
 impl From<DiscoveredWriterData> for DataPayload {
     fn from(v: DiscoveredWriterData) -> Self {
-        Self::DiscoveredWriter(Box::new(v))
+        Self::Writer(Box::new(v))
     }
 }
 
 impl From<DiscoveredTopicData> for DataPayload {
     fn from(v: DiscoveredTopicData) -> Self {
-        Self::DiscoveredTopic(Box::new(v))
+        Self::Topic(Box::new(v))
     }
 }
 

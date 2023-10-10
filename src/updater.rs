@@ -161,12 +161,12 @@ impl Updater {
 
         if let Some(payload) = &event.payload {
             match payload {
-                DataPayload::DiscoveredTopic(_data) => {
+                DataPayload::Topic(_data) => {
                     debug!("DiscoveredTopic not yet implemented");
                     // let topic_name = data.topic_data.name.clone();
                     // TODO
                 }
-                DataPayload::DiscoveredWriter(data) => {
+                DataPayload::Writer(data) => {
                     let remote_writer_guid = data.writer_proxy.remote_writer_guid;
                     // TODO: Find the correct writer
                     assert_eq!(event.writer_id.prefix, remote_writer_guid.prefix);
@@ -207,7 +207,7 @@ impl Updater {
                         topic_state.writers.insert(remote_writer_guid);
                     }
                 }
-                DataPayload::DiscoveredReader(data) => {
+                DataPayload::Reader(data) => {
                     let remote_reader_guid = data.reader_proxy.remote_reader_guid;
                     // TODO: Find the correct writer
                     assert_eq!(event.reader_id.prefix, remote_reader_guid.prefix);
@@ -249,7 +249,7 @@ impl Updater {
                         topic_state.readers.insert(remote_reader_guid);
                     }
                 }
-                DataPayload::DiscoveredParticipant(_data) => {
+                DataPayload::Participant(_data) => {
                     debug!("DiscoveredParticipant not yet implemented");
                     // TODO
                 }

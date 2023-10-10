@@ -95,10 +95,7 @@ impl PacketDecoder {
 
             // Store the fragment into the buffer
             let fragment_data = &packet_data[ip_packet.header_len() as usize..];
-            let fragment_buffer = self
-                .fragments
-                .entry((src, dst, ident))
-                .or_insert_with(BTreeMap::new);
+            let fragment_buffer = self.fragments.entry((src, dst, ident)).or_default();
             fragment_buffer.insert(ip_packet.frag_offset(), fragment_data.to_vec());
 
             // Update the assembler
@@ -136,7 +133,7 @@ impl PacketCodec for PacketDecoder {
 
     fn decode(&mut self, packet: pcap::Packet) -> Self::Item {
         let args = (move |packet: &pcap::Packet| {
-            let (eth_header, vlan_header, packet_data) = Self::dissect_eth_header(&packet).ok()?;
+            let (eth_header, vlan_header, packet_data) = Self::dissect_eth_header(packet).ok()?;
             let (ip_repr, data) = if Self::is_fragment(packet_data).ok()? {
                 let (ip_repr, data) = self.process_fragments(packet_data).ok()?;
                 (ip_repr, data?)
