@@ -128,6 +128,9 @@ impl Updater {
     }
 
     fn handle_data_event(&self, state: &mut State, event: &DataEvent) {
+        state.stat.packet_count += 1;
+        state.stat.data_submsg_count += 1;
+
         {
             let participant = state
                 .participants
@@ -255,6 +258,9 @@ impl Updater {
     }
 
     fn handle_data_frag_event(&self, state: &mut State, event: &DataFragEvent) {
+        state.stat.packet_count += 1;
+        state.stat.datafrag_submsg_count += 1;
+
         let DataFragEvent {
             fragment_starting_num,
             fragments_in_submessage,
@@ -379,7 +385,9 @@ impl Updater {
         }
     }
 
-    fn handle_gap_event(&self, state: &mut State, event: &GapEvent) {
+    fn handle_gap_event(&self, state: &mut State, _event: &GapEvent) {
+        state.stat.packet_count += 1;
+
         // let GapEvent {
         //     writer_id,
         //     gap_start,
@@ -400,6 +408,9 @@ impl Updater {
     }
 
     fn handle_heartbeat_event(&self, state: &mut State, event: &HeartbeatEvent) {
+        state.stat.packet_count += 1;
+        state.stat.heartbeat_submsg_count += 1;
+
         let participant = state
             .participants
             .entry(event.writer_id.prefix)
@@ -437,6 +448,9 @@ impl Updater {
     }
 
     fn handle_ack_nack_event(&self, state: &mut State, event: &AckNackEvent) {
+        state.stat.packet_count += 1;
+        state.stat.acknack_submsg_count += 1;
+
         // let AckNackEvent {
         //     reader_id,
         //     count,
@@ -474,7 +488,13 @@ impl Updater {
         reader.last_sn = Some(event.base_sn);
     }
 
-    fn handle_nack_frag_event(&self, state: &mut State, event: &NackFragEvent) {}
+    fn handle_nack_frag_event(&self, state: &mut State, _event: &NackFragEvent) {
+        state.stat.packet_count += 1;
+        state.stat.ackfrag_submsg_count += 1;
+    }
 
-    fn handle_heartbeat_frag_event(&self, state: &mut State, event: &HeartbeatFragEvent) {}
+    fn handle_heartbeat_frag_event(&self, state: &mut State, _event: &HeartbeatFragEvent) {
+        state.stat.packet_count += 1;
+        state.stat.heartbeat_frag_submsg_count += 1;
+    }
 }

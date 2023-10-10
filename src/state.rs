@@ -18,6 +18,7 @@ pub struct State {
     pub participants: HashMap<GuidPrefix, ParticipantState>,
     pub topics: HashMap<String, TopicState>,
     pub abnormalities: Vec<Abnormality>,
+    pub stat: Statistics,
 }
 
 impl Default for State {
@@ -27,6 +28,7 @@ impl Default for State {
             participants: HashMap::new(),
             topics: HashMap::new(),
             abnormalities: vec![],
+            stat: Statistics::default(),
         }
     }
 }
@@ -190,4 +192,29 @@ pub struct AckNackState {
     pub missing_sn: Vec<i64>,
     pub count: i32,
     pub since: Instant,
+}
+
+#[derive(Debug)]
+pub struct Statistics {
+    pub packet_count: usize,
+    pub data_submsg_count: usize,
+    pub datafrag_submsg_count: usize,
+    pub acknack_submsg_count: usize,
+    pub ackfrag_submsg_count: usize,
+    pub heartbeat_submsg_count: usize,
+    pub heartbeat_frag_submsg_count: usize,
+}
+
+impl Default for Statistics {
+    fn default() -> Self {
+        Self {
+            packet_count: 0,
+            data_submsg_count: 0,
+            datafrag_submsg_count: 0,
+            acknack_submsg_count: 0,
+            ackfrag_submsg_count: 0,
+            heartbeat_submsg_count: 0,
+            heartbeat_frag_submsg_count: 0,
+        }
+    }
 }

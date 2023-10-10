@@ -328,14 +328,13 @@ fn handle_submsg_heartbeat_frag(
 ) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let HeartbeatFrag {
-        reader_id,
         writer_id,
         writer_sn,
         last_fragment_num,
         count,
+        ..
     } = *data;
     let writer_id = GUID::new(guid_prefix, writer_id);
-    // let reader_id = GUID::new(guid_prefix, reader_id);
 
     // println!(
     //     "heartbeat_frag {}\t{last_fragment_num}",

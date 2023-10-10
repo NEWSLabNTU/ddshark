@@ -1,5 +1,6 @@
 mod tab_abnormality;
 mod tab_reader;
+mod tab_stat;
 mod tab_topic;
 mod tab_writer;
 mod xtable;
@@ -29,16 +30,18 @@ use tracing::error;
 use self::{
     tab_abnormality::{AbnormalityTable, AbnormalityTableState},
     tab_reader::{ReaderTable, ReaderTableState},
+    tab_stat::{StatTable, StatTableState},
     tab_topic::{TopicTable, TopicTableState},
     tab_writer::{WriterTable, WriterTableState},
 };
 
-const TAB_TITLES: &[&str] = &["Writers", "Reader", "Topics", "Abnormalities"];
+const TAB_TITLES: &[&str] = &["Writers", "Reader", "Topics", "Statistics", "Abnormalities"];
 
 pub(crate) struct Tui {
     tab_writer: WriterTableState,
     tab_reader: ReaderTableState,
     tab_topic: TopicTableState,
+    tab_stat: StatTableState,
     tab_abnormality: AbnormalityTableState,
     tick_dur: Duration,
     tab_index: usize,
@@ -55,6 +58,7 @@ impl Tui {
             tab_topic: TopicTableState::new(),
             tab_abnormality: AbnormalityTableState::new(),
             tab_reader: ReaderTableState::new(),
+            tab_stat: StatTableState::new(),
         }
     }
 
@@ -203,7 +207,10 @@ impl Tui {
                 chunks[1],
                 &mut self.tab_topic,
             ),
-            3 => frame.render_stateful_widget(
+            3 => {
+                frame.render_stateful_widget(StatTable::new(&state), chunks[1], &mut self.tab_stat)
+            }
+            4 => frame.render_stateful_widget(
                 AbnormalityTable::new(&state),
                 chunks[1],
                 &mut self.tab_abnormality,
@@ -217,7 +224,8 @@ impl Tui {
             0 => self.tab_writer.previous_item(),
             1 => self.tab_reader.previous_item(),
             2 => self.tab_topic.previous_item(),
-            3 => self.tab_abnormality.previous_item(),
+            3 => self.tab_stat.previous_item(),
+            4 => self.tab_abnormality.previous_item(),
             _ => unreachable!(),
         }
     }
@@ -227,7 +235,8 @@ impl Tui {
             0 => self.tab_writer.next_item(),
             1 => self.tab_reader.next_item(),
             2 => self.tab_topic.next_item(),
-            3 => self.tab_abnormality.next_item(),
+            3 => self.tab_stat.next_item(),
+            4 => self.tab_abnormality.next_item(),
             _ => unreachable!(),
         }
     }
@@ -237,7 +246,8 @@ impl Tui {
             0 => self.tab_writer.previous_page(),
             1 => self.tab_reader.previous_page(),
             2 => self.tab_topic.previous_page(),
-            3 => self.tab_abnormality.previous_page(),
+            3 => self.tab_stat.previous_page(),
+            4 => self.tab_abnormality.previous_page(),
             _ => unreachable!(),
         }
     }
@@ -247,7 +257,8 @@ impl Tui {
             0 => self.tab_writer.next_page(),
             1 => self.tab_reader.next_page(),
             2 => self.tab_topic.next_page(),
-            3 => self.tab_abnormality.next_page(),
+            3 => self.tab_stat.next_page(),
+            4 => self.tab_abnormality.next_page(),
             _ => unreachable!(),
         }
     }
@@ -257,7 +268,8 @@ impl Tui {
             0 => self.tab_writer.first_item(),
             1 => self.tab_reader.first_item(),
             2 => self.tab_topic.first_item(),
-            3 => self.tab_abnormality.first_item(),
+            3 => self.tab_stat.first_item(),
+            4 => self.tab_abnormality.first_item(),
             _ => unreachable!(),
         }
     }
@@ -267,7 +279,8 @@ impl Tui {
             0 => self.tab_writer.last_item(),
             1 => self.tab_reader.last_item(),
             2 => self.tab_topic.last_item(),
-            3 => self.tab_abnormality.last_item(),
+            3 => self.tab_stat.last_item(),
+            4 => self.tab_abnormality.last_item(),
             _ => unreachable!(),
         }
     }
