@@ -183,14 +183,23 @@ impl Tui {
         };
 
         // Split the screen vertically into two chunks.
+        let content_height = frame.size().height.saturating_sub(2);
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(0)
-            .constraints([Constraint::Min(3), Constraint::Min(1)].as_ref())
+            .constraints(
+                [
+                    Constraint::Min(1),
+                    Constraint::Length(content_height),
+                    Constraint::Min(1),
+                ]
+                .as_ref(),
+            )
             .split(frame.size());
 
         // Build the container for tabs
-        let tabs_block = Block::default().borders(Borders::ALL);
+        let tabs_block = Block::default();
         let tabs = Tabs::new(TAB_TITLES.to_vec())
             .block(tabs_block)
             .style(Style::default().fg(Color::White))
@@ -227,6 +236,11 @@ impl Tui {
             ),
             _ => unreachable!(),
         }
+
+        // Render the bottom tray
+        let tray_block = Block::default();
+        let tray = Paragraph::new("Q: Exit  H: Help  TAB: Next tab").block(tray_block);
+        frame.render_widget(tray, chunks[2]);
 
         // Render dialogs
         match self.focus {

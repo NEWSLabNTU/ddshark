@@ -28,15 +28,13 @@ impl AbnormalityTable {
                 } = *report;
                 let guid_to_string = |guid: Option<GUID>| match guid {
                     Some(guid) => format!("{}", guid.display()),
-                    None => "<none>".to_string(),
+                    None => "-".to_string(),
                 };
 
                 let when = when.to_rfc3339();
                 let reader_id = guid_to_string(reader_id);
                 let writer_id = guid_to_string(writer_id);
-                let topic_name = topic_name
-                    .to_owned()
-                    .unwrap_or_else(|| "<none>".to_string());
+                let topic_name = topic_name.to_owned().unwrap_or_else(|| "-".to_string());
                 let desc = desc.clone();
 
                 vec![when, writer_id, reader_id, topic_name, desc]

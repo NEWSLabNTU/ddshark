@@ -71,7 +71,7 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsContext> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => match emsg {
             EntitySubmessage::AckNack(data, _) => {
-                let event = handle_submsg_ack_nack(msg, submsg, data);
+                let event = handle_submsg_acknack(msg, submsg, data);
                 Some(event)
             }
             EntitySubmessage::Data(data, _) => {
@@ -91,11 +91,11 @@ fn handle_submsg(msg: &Message, submsg: &SubMessage) -> Option<RtpsContext> {
                 Some(event)
             }
             EntitySubmessage::HeartbeatFrag(data, _) => {
-                let event = handle_submsg_heartbeat_frag(msg, submsg, data);
+                let event = handle_submsg_heartbeatfrag(msg, submsg, data);
                 Some(event)
             }
             EntitySubmessage::NackFrag(data, _) => {
-                let event = handle_submsg_nack_frag(msg, submsg, data);
+                let event = handle_submsg_nackfrag(msg, submsg, data);
                 Some(event)
             }
         },
@@ -269,7 +269,7 @@ fn handle_submsg_gap(msg: &Message, _submsg: &SubMessage, data: &Gap) -> RtpsCon
     .into()
 }
 
-fn handle_submsg_nack_frag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> RtpsContext {
+fn handle_submsg_nackfrag(msg: &Message, _submsg: &SubMessage, data: &NackFrag) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let NackFrag {
         reader_id,
@@ -321,7 +321,7 @@ fn handle_submsg_heartbeat(msg: &Message, _submsg: &SubMessage, data: &Heartbeat
     .into()
 }
 
-fn handle_submsg_heartbeat_frag(
+fn handle_submsg_heartbeatfrag(
     msg: &Message,
     _submsg: &SubMessage,
     data: &HeartbeatFrag,
@@ -350,7 +350,7 @@ fn handle_submsg_heartbeat_frag(
     .into()
 }
 
-fn handle_submsg_ack_nack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -> RtpsContext {
+fn handle_submsg_acknack(msg: &Message, _submsg: &SubMessage, data: &AckNack) -> RtpsContext {
     let guid_prefix = msg.header.guid_prefix;
     let AckNack {
         reader_id,

@@ -14,7 +14,7 @@ use std::{
 };
 use tracing::{debug, error, warn};
 
-const TICK_INTERVAL: Duration = Duration::from_millis(1000);
+const TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
@@ -84,13 +84,13 @@ impl Updater {
                         self.handle_heartbeat_event(&mut state, event);
                     }
                     RtpsContext::AckNack(event) => {
-                        self.handle_ack_nack_event(&mut state, event);
+                        self.handle_acknack_event(&mut state, event);
                     }
                     RtpsContext::NackFrag(event) => {
-                        self.handle_nack_frag_event(&mut state, event);
+                        self.handle_nackfrag_event(&mut state, event);
                     }
                     RtpsContext::HeartbeatFrag(event) => {
-                        self.handle_heartbeat_frag_event(&mut state, event);
+                        self.handle_heartbeatfrag_event(&mut state, event);
                     }
                 },
             }
@@ -98,7 +98,7 @@ impl Updater {
     }
 
     fn handle_tick(&self, state: &mut State) {
-        const ALPHA: f64 = 0.9;
+        const ALPHA: f64 = 0.99;
 
         let now = Instant::now();
         let elapsed_secs = state.tick_since.elapsed().as_secs_f64();
@@ -447,17 +447,12 @@ impl Updater {
         }
     }
 
-    fn handle_ack_nack_event(&self, state: &mut State, event: &AckNackEvent) {
+    fn handle_acknack_event(&self, state: &mut State, event: &AckNackEvent) {
+        // Update statistics
         state.stat.packet_count += 1;
         state.stat.acknack_submsg_count += 1;
 
-        // let AckNackEvent {
-        //     reader_id,
-        //     count,
-        //     base_sn,
-        //     ref missing_sn,
-        // } = *event;
-
+        // Update traffic statistics for associated reader
         let participant = state
             .participants
             .entry(event.reader_id.prefix)
@@ -467,7 +462,6 @@ impl Updater {
             .entry(event.reader_id.entity_id)
             .or_default();
 
-        // Update traffic statistics
         reader.total_acknack_count += 1;
         reader.acc_acknack_count += 1;
 
@@ -488,12 +482,12 @@ impl Updater {
         reader.last_sn = Some(event.base_sn);
     }
 
-    fn handle_nack_frag_event(&self, state: &mut State, _event: &NackFragEvent) {
+    fn handle_nackfrag_event(&self, state: &mut State, _event: &NackFragEvent) {
         state.stat.packet_count += 1;
         state.stat.ackfrag_submsg_count += 1;
     }
 
-    fn handle_heartbeat_frag_event(&self, state: &mut State, _event: &HeartbeatFragEvent) {
+    fn handle_heartbeatfrag_event(&self, state: &mut State, _event: &HeartbeatFragEvent) {
         state.stat.packet_count += 1;
         state.stat.heartbeat_frag_submsg_count += 1;
     }
