@@ -32,9 +32,12 @@ pub struct GUIDDisplay<'a>(&'a GUID);
 
 impl<'a> Display for GUIDDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let GUID { prefix, entity_id } = self.0;
-
-        write!(f, "{}|{}", hex::encode(prefix.bytes), entity_id.display())
+        if self.0.prefix == GuidPrefix::UNKNOWN {
+            write!(f, "UNKNOWN")
+        } else {
+            let GUID { prefix, entity_id } = self.0;
+            write!(f, "{}|{}", hex::encode(prefix.bytes), entity_id.display())
+        }
     }
 }
 
@@ -52,7 +55,11 @@ pub struct GuidPrefixDisplay<'a>(&'a GuidPrefix);
 
 impl<'a> Display for GuidPrefixDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.0.bytes),)
+        if *self.0 == GuidPrefix::UNKNOWN {
+            write!(f, "UNKNOWN")
+        } else {
+            write!(f, "{}", hex::encode(self.0.bytes))
+        }
     }
 }
 
