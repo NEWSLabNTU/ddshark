@@ -5,19 +5,37 @@ use rustdds::{
         spdp_participant_data::SpdpDiscoveredParticipantData,
         topic_data::{DiscoveredReaderData, DiscoveredWriterData},
     },
-    structure::sequence_number::{FragmentNumber, SequenceNumberSet},
+    structure::{
+        guid::GuidPrefix,
+        locator::Locator,
+        sequence_number::{FragmentNumber, SequenceNumberSet},
+    },
     SequenceNumber, GUID,
 };
 use smoltcp::wire::Ipv4Repr;
 
 #[derive(Debug, Clone)]
 pub enum UpdateEvent {
-    Rtps(RtpsEvent),
+    RtpsMsg(RtpsMsgEvent),
+    RtpsSubmsg(RtpsSubmsgEvent),
+    ParticipantInfo(ParticipantInfo),
     Tick,
 }
 
+impl From<ParticipantInfo> for UpdateEvent {
+    fn from(v: ParticipantInfo) -> Self {
+        Self::ParticipantInfo(v)
+    }
+}
+
+impl From<RtpsSubmsgEvent> for UpdateEvent {
+    fn from(v: RtpsSubmsgEvent) -> Self {
+        Self::RtpsSubmsg(v)
+    }
+}
+
 #[derive(Debug, Clone)]
-pub enum RtpsContext {
+pub enum RtpsSubmsgEvent {
     Data(Box<DataEvent>),
     DataFrag(Box<DataFragEvent>),
     Gap(Box<GapEvent>),
@@ -27,46 +45,51 @@ pub enum RtpsContext {
     HeartbeatFrag(HeartbeatFragEvent),
 }
 
-impl From<NackFragEvent> for RtpsContext {
+impl From<NackFragEvent> for RtpsSubmsgEvent {
     fn from(v: NackFragEvent) -> Self {
         Self::NackFrag(v)
     }
 }
 
-impl From<DataFragEvent> for RtpsContext {
+impl From<DataFragEvent> for RtpsSubmsgEvent {
     fn from(v: DataFragEvent) -> Self {
         Self::DataFrag(Box::new(v))
     }
 }
 
-impl From<DataEvent> for RtpsContext {
+impl From<DataEvent> for RtpsSubmsgEvent {
     fn from(v: DataEvent) -> Self {
         Self::Data(Box::new(v))
     }
 }
 
-impl From<GapEvent> for RtpsContext {
+impl From<GapEvent> for RtpsSubmsgEvent {
     fn from(v: GapEvent) -> Self {
         Self::Gap(Box::new(v))
     }
 }
 
-impl From<HeartbeatEvent> for RtpsContext {
+impl From<HeartbeatEvent> for RtpsSubmsgEvent {
     fn from(v: HeartbeatEvent) -> Self {
         Self::Heartbeat(v)
     }
 }
 
-impl From<HeartbeatFragEvent> for RtpsContext {
+impl From<HeartbeatFragEvent> for RtpsSubmsgEvent {
     fn from(v: HeartbeatFragEvent) -> Self {
         Self::HeartbeatFrag(v)
     }
 }
 
-impl From<AckNackEvent> for RtpsContext {
+impl From<AckNackEvent> for RtpsSubmsgEvent {
     fn from(v: AckNackEvent) -> Self {
         Self::AckNack(v)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct RtpsMsgEvent {
+    pub headers: PacketHeaders,
 }
 
 #[derive(Debug, Clone)]
@@ -76,12 +99,6 @@ pub struct PacketHeaders {
     pub vlan_header: Option<SingleVlanHeader>,
     pub ipv4_header: Ipv4Repr,
     pub ts: chrono::Duration,
-}
-
-#[derive(Debug, Clone)]
-pub struct RtpsEvent {
-    pub headers: PacketHeaders,
-    pub event: RtpsContext,
 }
 
 #[derive(Debug, Clone)]
@@ -133,7 +150,7 @@ pub struct DiscoveredReaderEvent {
 
 #[derive(Debug, Clone)]
 pub struct HeartbeatEvent {
-    pub writer_id: GUID,
+    pub writer_guid: GUID,
     pub first_sn: SequenceNumber,
     pub last_sn: SequenceNumber,
     pub count: i32,
@@ -141,7 +158,8 @@ pub struct HeartbeatEvent {
 
 #[derive(Debug, Clone)]
 pub struct AckNackEvent {
-    pub reader_id: GUID,
+    pub writer_guid: GUID,
+    pub reader_guid: GUID,
     pub count: i32,
     pub base_sn: i64,
     pub missing_sn: Vec<i64>,
@@ -149,7 +167,7 @@ pub struct AckNackEvent {
 
 #[derive(Debug, Clone)]
 pub struct HeartbeatFragEvent {
-    pub writer_id: GUID,
+    pub writer_guid: GUID,
     pub writer_sn: SequenceNumber,
     pub last_fragment_num: FragmentNumber,
     pub count: i32,
@@ -157,8 +175,7 @@ pub struct HeartbeatFragEvent {
 
 #[derive(Debug, Clone)]
 pub struct DataEvent {
-    pub writer_id: GUID,
-    pub reader_id: GUID,
+    pub writer_guid: GUID,
     pub writer_sn: SequenceNumber,
     pub payload_size: usize,
     pub payload: Option<DataPayload>,
@@ -166,8 +183,7 @@ pub struct DataEvent {
 
 #[derive(Debug, Clone)]
 pub struct DataFragEvent {
-    pub writer_id: GUID,
-    pub reader_id: GUID,
+    pub writer_guid: GUID,
     pub writer_sn: SequenceNumber,
     pub fragment_starting_num: u32,
     pub fragments_in_submessage: u16,
@@ -179,16 +195,23 @@ pub struct DataFragEvent {
 
 #[derive(Debug, Clone)]
 pub struct GapEvent {
-    pub writer_id: GUID,
-    pub reader_id: GUID,
+    pub writer_guid: GUID,
+    pub reader_guid: GUID,
     pub gap_start: SequenceNumber,
     pub gap_list: SequenceNumberSet,
 }
 
 #[derive(Debug, Clone)]
 pub struct NackFragEvent {
-    pub writer_id: GUID,
-    pub reader_id: GUID,
+    pub writer_guid: GUID,
+    pub reader_guid: GUID,
     pub writer_sn: SequenceNumber,
     pub count: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParticipantInfo {
+    pub guid_prefix: GuidPrefix,
+    pub unicast_locator_list: Vec<Locator>,
+    pub multicast_locator_list: Option<Vec<Locator>>,
 }

@@ -2,7 +2,10 @@ use chrono::{DateTime, Local};
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
     discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
-    structure::guid::{EntityId, GuidPrefix},
+    structure::{
+        guid::{EntityId, GuidPrefix},
+        locator::Locator,
+    },
     SequenceNumber, GUID,
 };
 use std::{
@@ -37,6 +40,8 @@ impl Default for State {
 pub struct ParticipantState {
     pub writers: HashMap<EntityId, WriterState>,
     pub readers: HashMap<EntityId, ReaderState>,
+    pub unicast_locator_list: Option<Vec<Locator>>,
+    pub multicast_locator_list: Option<Vec<Locator>>,
 }
 
 impl Default for ParticipantState {
@@ -44,6 +49,8 @@ impl Default for ParticipantState {
         Self {
             writers: HashMap::new(),
             readers: HashMap::new(),
+            unicast_locator_list: None,
+            multicast_locator_list: None,
         }
     }
 }
@@ -181,8 +188,8 @@ pub struct HeartbeatState {
 #[derive(Debug)]
 pub struct Abnormality {
     pub when: DateTime<Local>,
-    pub writer_id: Option<GUID>,
-    pub reader_id: Option<GUID>,
+    pub writer_guid: Option<GUID>,
+    pub reader_guid: Option<GUID>,
     pub topic_name: Option<String>,
     pub desc: String,
 }

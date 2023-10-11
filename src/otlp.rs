@@ -1,19 +1,11 @@
-use crate::{
-    message::{RtpsContext, RtpsEvent},
-    opts::Opts,
-};
-use etherparse::SingleVlanHeader;
+use crate::{message::RtpsSubmsgEvent, opts::Opts};
+
 use gethostname::gethostname;
 use mac_address::mac_address_by_name;
-use opentelemetry_api::{
-    global::shutdown_tracer_provider,
-    trace::{Span, SpanBuilder, SpanKind, Tracer},
-    KeyValue,
-};
+use opentelemetry_api::{global::shutdown_tracer_provider, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{runtime, trace as sdktrace, trace::Sampler, Resource};
 use opentelemetry_semantic_conventions as semcov;
-use rustdds::structure::guid::EntityKind;
 use std::time::{Duration, SystemTime};
 
 pub struct TraceHandle {
@@ -71,70 +63,74 @@ impl TraceHandle {
         }
     }
 
-    pub fn send_trace(&self, message: &RtpsEvent, topic_name: String) {
-        let (headers, event) = (message.headers.clone(), message.event.clone());
-        let capture_time = headers.pcap_header.ts;
-        // let ma: [u8; 6] = headers.eth_header.destination;
-
-        let (submsg_type, writer_id, sn, fragment_starting_num, payload_size) = match event {
-            RtpsContext::Data(event) => (
-                "DATA",
-                event.writer_id,
-                event.writer_sn,
-                0u32,
-                event.payload_size,
-            ),
-            RtpsContext::DataFrag(event) => (
-                "DATA_FRAG",
-                event.writer_id,
-                event.writer_sn,
-                event.fragment_starting_num,
-                event.payload_size,
-            ),
-            RtpsContext::Gap(_) => todo!(),
-            RtpsContext::Heartbeat(_) => todo!(),
-            RtpsContext::AckNack(_) => todo!(),
-            RtpsContext::NackFrag(_) => todo!(),
-            RtpsContext::HeartbeatFrag(_) => todo!(),
-        };
-        let traffic_type = match writer_id.entity_id.entity_kind {
-            // TODO: add complete cases
-            EntityKind::WRITER_NO_KEY_USER_DEFINED => "USER_DEFINED",
-            _ => "BUILT_IN",
-        };
-
-        // Create attributes to be attached to the span.
-        let attrs = vec![
-            semcov::trace::EVENT_NAME.string("eno2"),
-            KeyValue::new("traffic_type", traffic_type.to_string()),
-            KeyValue::new("topic_name", topic_name),
-            KeyValue::new("writer_id", convert_to_colon_sep_hex(writer_id.to_bytes())),
-            KeyValue::new("sn", sn.0),
-            KeyValue::new("fragment_starting_num", fragment_starting_num as i64),
-            KeyValue::new("payload_size", payload_size as i64),
-            KeyValue::new(
-                "pcp",
-                headers
-                    .vlan_header
-                    .unwrap_or(SingleVlanHeader::default())
-                    .priority_code_point as i64,
-            ),
-        ];
-
-        // Create a span with the given attributes. The start time is set to captured time.
-        // The end time is set to captured time + payload size * 8 / 2.5Gbps.
-        let mut span = self.tracer.build(SpanBuilder {
-            name: submsg_type.into(),
-            span_kind: Some(SpanKind::Internal),
-            start_time: Some(convert_to_system_time(capture_time)),
-            attributes: Some(attrs.into_iter().collect()),
-            ..Default::default()
-        });
-        span.end_with_timestamp(
-            convert_to_system_time(capture_time)
-                + Duration::from_secs_f64(payload_size as f64 * 8. / (2.5 * 1e9)),
-        );
+    pub fn send_trace(&self, _message: &RtpsSubmsgEvent, _topic_name: String) {
+        todo!();
     }
+
+    // pub fn send_trace(&self, message: &RtpsEvent, topic_name: String) {
+    //     let (headers, event) = (message.headers.clone(), message.context.clone());
+    //     let capture_time = headers.pcap_header.ts;
+    //     // let ma: [u8; 6] = headers.eth_header.destination;
+
+    //     let (submsg_type, writer_id, sn, fragment_starting_num, payload_size) = match event {
+    //         RtpsEvent::Data(event) => (
+    //             "DATA",
+    //             event.writer_guid,
+    //             event.writer_sn,
+    //             0u32,
+    //             event.payload_size,
+    //         ),
+    //         RtpsEvent::DataFrag(event) => (
+    //             "DATA_FRAG",
+    //             event.writer_guid,
+    //             event.writer_sn,
+    //             event.fragment_starting_num,
+    //             event.payload_size,
+    //         ),
+    //         RtpsEvent::Gap(_) => todo!(),
+    //         RtpsEvent::Heartbeat(_) => todo!(),
+    //         RtpsEvent::AckNack(_) => todo!(),
+    //         RtpsEvent::NackFrag(_) => todo!(),
+    //         RtpsEvent::HeartbeatFrag(_) => todo!(),
+    //     };
+    //     let traffic_type = match writer_id.entity_id.entity_kind {
+    //         // TODO: add complete cases
+    //         EntityKind::WRITER_NO_KEY_USER_DEFINED => "USER_DEFINED",
+    //         _ => "BUILT_IN",
+    //     };
+
+    //     // Create attributes to be attached to the span.
+    //     let attrs = vec![
+    //         semcov::trace::EVENT_NAME.string("eno2"),
+    //         KeyValue::new("traffic_type", traffic_type.to_string()),
+    //         KeyValue::new("topic_name", topic_name),
+    //         KeyValue::new("writer_id", convert_to_colon_sep_hex(writer_id.to_bytes())),
+    //         KeyValue::new("sn", sn.0),
+    //         KeyValue::new("fragment_starting_num", fragment_starting_num as i64),
+    //         KeyValue::new("payload_size", payload_size as i64),
+    //         KeyValue::new(
+    //             "pcp",
+    //             headers
+    //                 .vlan_header
+    //                 .unwrap_or(SingleVlanHeader::default())
+    //                 .priority_code_point as i64,
+    //         ),
+    //     ];
+
+    //     // Create a span with the given attributes. The start time is set to captured time.
+    //     // The end time is set to captured time + payload size * 8 / 2.5Gbps.
+    //     let mut span = self.tracer.build(SpanBuilder {
+    //         name: submsg_type.into(),
+    //         span_kind: Some(SpanKind::Internal),
+    //         start_time: Some(convert_to_system_time(capture_time)),
+    //         attributes: Some(attrs.into_iter().collect()),
+    //         ..Default::default()
+    //     });
+    //     span.end_with_timestamp(
+    //         convert_to_system_time(capture_time)
+    //             + Duration::from_secs_f64(payload_size as f64 * 8. / (2.5 * 1e9)),
+    //     );
+    // }
 }
 
 impl Drop for TraceHandle {

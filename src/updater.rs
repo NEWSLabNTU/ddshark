@@ -1,7 +1,7 @@
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent,
-        HeartbeatFragEvent, NackFragEvent, RtpsContext, UpdateEvent,
+        HeartbeatFragEvent, NackFragEvent, ParticipantInfo, RtpsSubmsgEvent, UpdateEvent,
     },
     opts::Opts,
     otlp,
@@ -70,26 +70,30 @@ impl Updater {
                 UpdateEvent::Tick => {
                     self.handle_tick(&mut state);
                 }
-                UpdateEvent::Rtps(msg) => match &msg.event {
-                    RtpsContext::Data(event) => {
+                UpdateEvent::RtpsMsg(_) => todo!(),
+                UpdateEvent::ParticipantInfo(info) => {
+                    self.handle_participant_info(&mut state, &info);
+                }
+                UpdateEvent::RtpsSubmsg(msg) => match &msg {
+                    RtpsSubmsgEvent::Data(event) => {
                         self.handle_data_event(&mut state, event);
                     }
-                    RtpsContext::DataFrag(event) => {
+                    RtpsSubmsgEvent::DataFrag(event) => {
                         self.handle_data_frag_event(&mut state, event);
                     }
-                    RtpsContext::Gap(event) => {
+                    RtpsSubmsgEvent::Gap(event) => {
                         self.handle_gap_event(&mut state, event);
                     }
-                    RtpsContext::Heartbeat(event) => {
+                    RtpsSubmsgEvent::Heartbeat(event) => {
                         self.handle_heartbeat_event(&mut state, event);
                     }
-                    RtpsContext::AckNack(event) => {
+                    RtpsSubmsgEvent::AckNack(event) => {
                         self.handle_acknack_event(&mut state, event);
                     }
-                    RtpsContext::NackFrag(event) => {
+                    RtpsSubmsgEvent::NackFrag(event) => {
                         self.handle_nackfrag_event(&mut state, event);
                     }
-                    RtpsContext::HeartbeatFrag(event) => {
+                    RtpsSubmsgEvent::HeartbeatFrag(event) => {
                         self.handle_heartbeatfrag_event(&mut state, event);
                     }
                 },
@@ -134,11 +138,11 @@ impl Updater {
         {
             let participant = state
                 .participants
-                .entry(event.writer_id.prefix)
+                .entry(event.writer_guid.prefix)
                 .or_default();
             let writer = participant
                 .writers
-                .entry(event.writer_id.entity_id)
+                .entry(event.writer_guid.entity_id)
                 .or_default();
 
             writer.last_sn = Some(event.writer_sn);
@@ -169,7 +173,7 @@ impl Updater {
                 DataPayload::Writer(data) => {
                     let remote_writer_guid = data.writer_proxy.remote_writer_guid;
                     // TODO: Find the correct writer
-                    assert_eq!(event.writer_id.prefix, remote_writer_guid.prefix);
+                    assert_eq!(event.writer_guid.prefix, remote_writer_guid.prefix);
 
                     let participant = state
                         .participants
@@ -189,8 +193,8 @@ impl Updater {
                             if orig_data.topic_name != new_data.topic_name {
                                 state.abnormalities.push(Abnormality {
                                     when: Local::now(),
-                                    writer_id: Some(event.writer_id),
-                                    reader_id: None,
+                                    writer_guid: Some(event.writer_guid),
+                                    reader_guid: None,
                                     topic_name: None,
                                     desc: "topic name changed in DiscoveredWriterData".to_string(),
                                 });
@@ -210,7 +214,12 @@ impl Updater {
                 DataPayload::Reader(data) => {
                     let remote_reader_guid = data.reader_proxy.remote_reader_guid;
                     // TODO: Find the correct writer
-                    assert_eq!(event.reader_id.prefix, remote_reader_guid.prefix);
+                    // dbg!(
+                    //     event.reader_guid.prefix,
+                    //     event.writer_guid.prefix,
+                    //     remote_reader_guid.prefix
+                    // );
+                    assert_eq!(event.writer_guid.prefix, remote_reader_guid.prefix);
 
                     let participant = state
                         .participants
@@ -231,8 +240,8 @@ impl Updater {
                             if orig_data.topic_name() != new_data.topic_name() {
                                 state.abnormalities.push(Abnormality {
                                     when: Local::now(),
-                                    writer_id: Some(event.writer_id),
-                                    reader_id: None,
+                                    writer_guid: Some(event.writer_guid),
+                                    reader_guid: None,
                                     topic_name: None,
                                     desc: "topic name changed in DiscoveredWriterData".to_string(),
                                 });
@@ -264,7 +273,7 @@ impl Updater {
         let DataFragEvent {
             fragment_starting_num,
             fragments_in_submessage,
-            writer_id,
+            writer_guid,
             writer_sn,
             // fragment_size,
             // data_size,
@@ -272,12 +281,15 @@ impl Updater {
             ..
         } = *event;
 
-        let participant = state.participants.entry(writer_id.prefix).or_default();
-        let entity = participant.writers.entry(writer_id.entity_id).or_default();
+        let participant = state.participants.entry(writer_guid.prefix).or_default();
+        let writer = participant
+            .writers
+            .entry(writer_guid.entity_id)
+            .or_default();
 
         // Increase byte count
-        entity.total_byte_count += event.payload_size;
-        entity.acc_byte_count += event.payload_size;
+        writer.total_byte_count += event.payload_size;
+        writer.acc_byte_count += event.payload_size;
 
         // println!(
         //     "{}\t{}\t{:.2}bps",
@@ -287,7 +299,7 @@ impl Updater {
         // );
 
         // let topic_name = entity.topic_name().map(|t| t.to_string());
-        let frag_msg = entity.frag_messages.entry(writer_sn).or_insert_with(|| {
+        let frag_msg = writer.frag_messages.entry(writer_sn).or_insert_with(|| {
             FragmentedMessage::new(event.data_size as usize, event.fragment_size as usize)
         });
 
@@ -299,9 +311,9 @@ impl Updater {
 
             state.abnormalities.push(Abnormality {
                 when: Local::now(),
-                writer_id: Some(writer_id),
-                reader_id: None,
-                topic_name: entity.topic_name().map(|t| t.to_string()),
+                writer_guid: Some(writer_guid),
+                reader_guid: None,
+                topic_name: writer.topic_name().map(|t| t.to_string()),
                 desc,
             });
             return;
@@ -351,9 +363,9 @@ impl Updater {
 
                     state.abnormalities.push(Abnormality {
                         when: Local::now(),
-                        writer_id: Some(writer_id),
-                        reader_id: None,
-                        topic_name: entity.topic_name().map(|t| t.to_string()),
+                        writer_guid: Some(writer_guid),
+                        reader_guid: None,
+                        topic_name: writer.topic_name().map(|t| t.to_string()),
                         desc: format!("unable to insert fragment {range:?} into defrag buffer"),
                     });
 
@@ -374,12 +386,12 @@ impl Updater {
                 frag_msg.recvd_fragments += event.fragments_in_submessage as usize;
 
                 if defrag_buf.is_full() {
-                    entity.frag_messages.remove(&event.writer_sn).unwrap();
-                    entity.last_sn = Some(event.writer_sn);
+                    writer.frag_messages.remove(&event.writer_sn).unwrap();
+                    writer.last_sn = Some(event.writer_sn);
 
                     // Increase message count
-                    entity.total_msg_count += 1;
-                    entity.acc_msg_count += 1;
+                    writer.total_msg_count += 1;
+                    writer.acc_msg_count += 1;
                 }
             }
         }
@@ -413,14 +425,14 @@ impl Updater {
 
         let participant = state
             .participants
-            .entry(event.writer_id.prefix)
+            .entry(event.writer_guid.prefix)
             .or_default();
-        let entity = participant
+        let writer = participant
             .writers
-            .entry(event.writer_id.entity_id)
+            .entry(event.writer_guid.entity_id)
             .or_default();
 
-        if let Some(heartbeat) = &mut entity.heartbeat {
+        if let Some(heartbeat) = &mut writer.heartbeat {
             if heartbeat.count < event.count {
                 if heartbeat.first_sn > event.first_sn.0 {
                     // TODO: warn
@@ -438,7 +450,7 @@ impl Updater {
                 };
             }
         } else {
-            entity.heartbeat = Some(HeartbeatState {
+            writer.heartbeat = Some(HeartbeatState {
                 first_sn: event.first_sn.0,
                 last_sn: event.first_sn.0,
                 count: event.count,
@@ -455,11 +467,11 @@ impl Updater {
         // Update traffic statistics for associated reader
         let participant = state
             .participants
-            .entry(event.reader_id.prefix)
+            .entry(event.reader_guid.prefix)
             .or_default();
         let reader = participant
             .readers
-            .entry(event.reader_id.entity_id)
+            .entry(event.reader_guid.entity_id)
             .or_default();
 
         reader.total_acknack_count += 1;
@@ -490,5 +502,17 @@ impl Updater {
     fn handle_heartbeatfrag_event(&self, state: &mut State, _event: &HeartbeatFragEvent) {
         state.stat.packet_count += 1;
         state.stat.heartbeat_frag_submsg_count += 1;
+    }
+
+    fn handle_participant_info(&self, state: &mut State, info: &ParticipantInfo) {
+        let ParticipantInfo {
+            guid_prefix,
+            ref unicast_locator_list,
+            ref multicast_locator_list,
+        } = *info;
+
+        let participant = state.participants.entry(guid_prefix).or_default();
+        participant.unicast_locator_list = Some(unicast_locator_list.clone());
+        participant.multicast_locator_list = multicast_locator_list.clone();
     }
 }

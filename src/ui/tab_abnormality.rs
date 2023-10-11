@@ -21,8 +21,8 @@ impl AbnormalityTable {
             .map(|report| {
                 let Abnormality {
                     when,
-                    writer_id,
-                    reader_id,
+                    writer_guid,
+                    reader_guid,
                     ref topic_name,
                     ref desc,
                 } = *report;
@@ -32,8 +32,8 @@ impl AbnormalityTable {
                 };
 
                 let when = when.to_rfc3339();
-                let reader_id = guid_to_string(reader_id);
-                let writer_id = guid_to_string(writer_id);
+                let reader_id = guid_to_string(reader_guid);
+                let writer_id = guid_to_string(writer_guid);
                 let topic_name = topic_name.to_owned().unwrap_or_else(|| "-".to_string());
                 let desc = desc.clone();
 
