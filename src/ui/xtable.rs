@@ -67,8 +67,7 @@ impl<'a> StatefulWidget for XTable<'a> {
             .block(table_block)
             .widths(&widths)
             .column_spacing(2)
-            .highlight_style(Style::default().add_modifier(Modifier::BOLD))
-            .highlight_symbol(">");
+            .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
 
         table.render(area, buf, &mut state.table_state);
     }

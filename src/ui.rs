@@ -1,4 +1,5 @@
 mod tab_abnormality;
+mod tab_participant;
 mod tab_reader;
 mod tab_stat;
 mod tab_topic;
@@ -30,15 +31,30 @@ use tracing::error;
 
 use self::{
     tab_abnormality::{AbnormalityTable, AbnormalityTableState},
+    tab_participant::{ParticipantTable, ParticipantTableState},
     tab_reader::{ReaderTable, ReaderTableState},
     tab_stat::{StatTable, StatTableState},
     tab_topic::{TopicTable, TopicTableState},
     tab_writer::{WriterTable, WriterTableState},
 };
 
-const TAB_TITLES: &[&str] = &["Writers", "Reader", "Topics", "Statistics", "Abnormalities"];
+const TAB_TITLES: &[&str] = &[
+    "Participants",
+    "Writers",
+    "Reader",
+    "Topics",
+    "Statistics",
+    "Abnormalities",
+];
+const TAB_IDX_PARTICIPANT: usize = 0;
+const TAB_IDX_WRITER: usize = 1;
+const TAB_IDX_READER: usize = 2;
+const TAB_IDX_TOPIC: usize = 3;
+const TAB_IDX_STATISTICS: usize = 4;
+const TAB_IDX_ABNORMALITIES: usize = 5;
 
 pub(crate) struct Tui {
+    tab_participant: ParticipantTableState,
     tab_writer: WriterTableState,
     tab_reader: ReaderTableState,
     tab_topic: TopicTableState,
@@ -56,6 +72,7 @@ impl Tui {
             tick_dur,
             state,
             tab_index: 0,
+            tab_participant: ParticipantTableState::new(),
             tab_writer: WriterTableState::new(),
             tab_topic: TopicTableState::new(),
             tab_abnormality: AbnormalityTableState::new(),
@@ -210,26 +227,30 @@ impl Tui {
 
         // Render the tab content according to the current tab index.
         match self.tab_index {
-            0 => frame.render_stateful_widget(
+            TAB_IDX_PARTICIPANT => frame.render_stateful_widget(
+                ParticipantTable::new(&state),
+                chunks[1],
+                &mut self.tab_participant,
+            ),
+            TAB_IDX_WRITER => frame.render_stateful_widget(
                 WriterTable::new(&state),
                 chunks[1],
                 &mut self.tab_writer,
             ),
-            1 => frame.render_stateful_widget(
+            TAB_IDX_READER => frame.render_stateful_widget(
                 ReaderTable::new(&state),
                 chunks[1],
                 &mut self.tab_reader,
             ),
-            2 => frame.render_stateful_widget(
+            TAB_IDX_TOPIC => frame.render_stateful_widget(
                 TopicTable::new(&state),
                 chunks[1],
                 &mut self.tab_topic,
             ),
-            3 => {
+            TAB_IDX_STATISTICS => {
                 frame.render_stateful_widget(StatTable::new(&state), chunks[1], &mut self.tab_stat);
             }
-
-            4 => frame.render_stateful_widget(
+            TAB_IDX_ABNORMALITIES => frame.render_stateful_widget(
                 AbnormalityTable::new(&state),
                 chunks[1],
                 &mut self.tab_abnormality,
@@ -287,66 +308,72 @@ q         Close dialog or exit
 
     fn key_up(&mut self) {
         match self.tab_index {
-            0 => self.tab_writer.previous_item(),
-            1 => self.tab_reader.previous_item(),
-            2 => self.tab_topic.previous_item(),
-            3 => self.tab_stat.previous_item(),
-            4 => self.tab_abnormality.previous_item(),
+            TAB_IDX_PARTICIPANT => self.tab_participant.previous_item(),
+            TAB_IDX_WRITER => self.tab_writer.previous_item(),
+            TAB_IDX_READER => self.tab_reader.previous_item(),
+            TAB_IDX_TOPIC => self.tab_topic.previous_item(),
+            TAB_IDX_STATISTICS => self.tab_stat.previous_item(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.previous_item(),
             _ => unreachable!(),
         }
     }
 
     fn key_down(&mut self) {
         match self.tab_index {
-            0 => self.tab_writer.next_item(),
-            1 => self.tab_reader.next_item(),
-            2 => self.tab_topic.next_item(),
-            3 => self.tab_stat.next_item(),
-            4 => self.tab_abnormality.next_item(),
+            TAB_IDX_PARTICIPANT => self.tab_participant.next_item(),
+            TAB_IDX_WRITER => self.tab_writer.next_item(),
+            TAB_IDX_READER => self.tab_reader.next_item(),
+            TAB_IDX_TOPIC => self.tab_topic.next_item(),
+            TAB_IDX_STATISTICS => self.tab_stat.next_item(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.next_item(),
             _ => unreachable!(),
         }
     }
 
     fn key_page_up(&mut self) {
         match self.tab_index {
-            0 => self.tab_writer.previous_page(),
-            1 => self.tab_reader.previous_page(),
-            2 => self.tab_topic.previous_page(),
-            3 => self.tab_stat.previous_page(),
-            4 => self.tab_abnormality.previous_page(),
+            TAB_IDX_PARTICIPANT => self.tab_participant.previous_page(),
+            TAB_IDX_WRITER => self.tab_writer.previous_page(),
+            TAB_IDX_READER => self.tab_reader.previous_page(),
+            TAB_IDX_TOPIC => self.tab_topic.previous_page(),
+            TAB_IDX_STATISTICS => self.tab_stat.previous_page(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.previous_page(),
             _ => unreachable!(),
         }
     }
 
     fn key_page_down(&mut self) {
         match self.tab_index {
-            0 => self.tab_writer.next_page(),
-            1 => self.tab_reader.next_page(),
-            2 => self.tab_topic.next_page(),
-            3 => self.tab_stat.next_page(),
-            4 => self.tab_abnormality.next_page(),
+            TAB_IDX_PARTICIPANT => self.tab_participant.next_page(),
+            TAB_IDX_WRITER => self.tab_writer.next_page(),
+            TAB_IDX_READER => self.tab_reader.next_page(),
+            TAB_IDX_TOPIC => self.tab_topic.next_page(),
+            TAB_IDX_STATISTICS => self.tab_stat.next_page(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.next_page(),
             _ => unreachable!(),
         }
     }
 
     fn key_home(&mut self) {
         match self.tab_index {
-            0 => self.tab_writer.first_item(),
-            1 => self.tab_reader.first_item(),
-            2 => self.tab_topic.first_item(),
-            3 => self.tab_stat.first_item(),
-            4 => self.tab_abnormality.first_item(),
+            TAB_IDX_PARTICIPANT => self.tab_participant.first_item(),
+            TAB_IDX_WRITER => self.tab_writer.first_item(),
+            TAB_IDX_READER => self.tab_reader.first_item(),
+            TAB_IDX_TOPIC => self.tab_topic.first_item(),
+            TAB_IDX_STATISTICS => self.tab_stat.first_item(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.first_item(),
             _ => unreachable!(),
         }
     }
 
     fn key_end(&mut self) {
         match self.tab_index {
-            0 => self.tab_writer.last_item(),
-            1 => self.tab_reader.last_item(),
-            2 => self.tab_topic.last_item(),
-            3 => self.tab_stat.last_item(),
-            4 => self.tab_abnormality.last_item(),
+            TAB_IDX_PARTICIPANT => self.tab_participant.last_item(),
+            TAB_IDX_WRITER => self.tab_writer.last_item(),
+            TAB_IDX_READER => self.tab_reader.last_item(),
+            TAB_IDX_TOPIC => self.tab_topic.last_item(),
+            TAB_IDX_STATISTICS => self.tab_stat.last_item(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.last_item(),
             _ => unreachable!(),
         }
     }
