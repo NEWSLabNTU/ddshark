@@ -2,7 +2,7 @@ use super::{packet_decoder::RtpsPacket, PacketSource};
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
-        NackFragEvent, ParticipantInfo, RtpsSubmsgEvent, UpdateEvent,
+        NackFragEvent, PacketHeaders, ParticipantInfo, RtpsSubmsgEvent, UpdateEvent,
     },
     utils::EntityIdExt,
 };
@@ -37,9 +37,11 @@ use rustdds::{
     SequenceNumber, Timestamp, GUID,
 };
 use serde::Deserialize;
+use smoltcp::wire::{Ipv4Repr, UdpRepr};
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
+    net::SocketAddrV4,
 };
 use tracing::{debug, error, warn};
 
@@ -57,12 +59,8 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
     let iter = source.into_message_iter()?;
 
     'msg_loop: for msg in iter {
-        let RtpsPacket {
-            headers: _,
-            message,
-        } = msg?;
+        let RtpsPacket { headers, message } = msg?;
 
-        let mut events = vec![];
         let mut interpreter = {
             let Header {
                 protocol_version,
@@ -70,7 +68,19 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
                 guid_prefix,
                 ..
             } = message.header;
+            let PacketHeaders {
+                pcap_header,
+                eth_header,
+                vlan_header,
+                ipv4_header: Ipv4Repr { src_addr, .. },
+                // udp_header: UdpRepr { src_port, .. },
+                ts,
+            } = headers;
+            let src_port = 0; // TODO: find correct UDP port
             assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
+
+            // TODO: extract the UDP port
+            let unicast_locator = Locator::UdpV4(SocketAddrV4::new(src_addr.0.into(), src_port));
 
             Interpreter {
                 src_version: protocol_version,
@@ -78,10 +88,19 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
                 src_guid_prefix: guid_prefix,
                 dst_guid_prefix: None,
                 timestamp: None,
-                unicast_locator_list: None,
+                unicast_locator_list: Some(vec![unicast_locator]),
                 multicast_locator_list: None,
             }
         };
+
+        let event: UpdateEvent = ParticipantInfo {
+            guid_prefix: interpreter.src_guid_prefix,
+            unicast_locator_list: interpreter.unicast_locator_list.as_ref().unwrap().clone(),
+            multicast_locator_list: None,
+        }
+        .into();
+
+        let mut events = vec![event];
 
         let event_iter = message
             .submessages

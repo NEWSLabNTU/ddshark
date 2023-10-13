@@ -12,7 +12,7 @@ use rustdds::{
     },
     SequenceNumber, GUID,
 };
-use smoltcp::wire::Ipv4Repr;
+use smoltcp::wire::{Ipv4Repr, UdpRepr};
 
 #[derive(Debug, Clone)]
 pub enum UpdateEvent {
@@ -98,6 +98,7 @@ pub struct PacketHeaders {
     pub eth_header: Ethernet2Header,
     pub vlan_header: Option<SingleVlanHeader>,
     pub ipv4_header: Ipv4Repr,
+    // pub udp_header: UdpRepr,
     pub ts: chrono::Duration,
 }
 
