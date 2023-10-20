@@ -29,7 +29,7 @@ impl Updater {
         opt: &Opts,
     ) -> Self {
         // Enable OTLP if `otlp_enable` is true.
-        let otlp_handle = match opt.otlp_enable {
+        let otlp_handle = match opt.otlp {
             true => Some(otlp::TraceHandle::new(opt)),
             false => None,
         };
