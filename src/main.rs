@@ -1,3 +1,4 @@
+mod logger;
 mod message;
 mod opts;
 mod otlp;

@@ -1,4 +1,5 @@
 use crate::{
+    logger::Logger,
     message::{
         AckNackEvent, DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent,
         HeartbeatFragEvent, NackFragEvent, ParticipantInfo, RtpsSubmsgEvent, UpdateEvent,
@@ -20,6 +21,7 @@ pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
     state: Arc<Mutex<State>>,
     otlp_handle: Option<otlp::TraceHandle>,
+    logger: Logger,
 }
 
 impl Updater {
@@ -34,14 +36,17 @@ impl Updater {
             false => None,
         };
 
+        let logger = Logger::new().unwrap();
+
         Self {
             rx,
             state,
             otlp_handle,
+            logger,
         }
     }
 
-    pub(crate) fn run(self) {
+    pub(crate) fn run(mut self) {
         let mut deadline = Instant::now() + TICK_INTERVAL;
         loop {
             use flume::RecvTimeoutError as E;
@@ -61,7 +66,8 @@ impl Updater {
                 }
             };
 
-            let Ok(mut state) = self.state.lock() else {
+            let state = self.state.clone();
+            let Ok(mut state) = state.lock() else {
                 error!("INTERNAL ERROR Mutex poision error");
                 break;
             };
@@ -101,7 +107,7 @@ impl Updater {
         }
     }
 
-    fn handle_tick(&self, state: &mut State) {
+    fn handle_tick(&mut self, state: &mut State) {
         const ALPHA: f64 = 0.99;
 
         let now = Instant::now();
@@ -129,6 +135,8 @@ impl Updater {
                 readers.acc_acknack_count = 0;
             }
         }
+
+        self.logger.save(state).unwrap();
     }
 
     fn handle_data_event(&self, state: &mut State, event: &DataEvent) {

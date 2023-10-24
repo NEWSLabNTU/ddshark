@@ -152,6 +152,7 @@ impl Tui {
                         Focus::Help => self.focus = Focus::Dashboard,
                     },
                     C::Char('h') => self.focus = Focus::Help,
+                    // C::Char('r') => self.logging = !self.logging,
                     C::Up => {
                         self.key_up();
                     }

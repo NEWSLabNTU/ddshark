@@ -1,3 +1,4 @@
+use crate::logger::Logger;
 use chrono::{DateTime, Local};
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
@@ -22,6 +23,7 @@ pub struct State {
     pub topics: HashMap<String, TopicState>,
     pub abnormalities: Vec<Abnormality>,
     pub stat: Statistics,
+    pub logger: Option<Logger>,
 }
 
 impl Default for State {
@@ -32,6 +34,7 @@ impl Default for State {
             topics: HashMap::new(),
             abnormalities: vec![],
             stat: Statistics::default(),
+            logger: None,
         }
     }
 }
