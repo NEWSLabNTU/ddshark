@@ -1,4 +1,4 @@
-use super::xtable::XTableState;
+use super::{value::Value, xtable::XTableState};
 use crate::{
     state::{HeartbeatState, State, WriterState},
     ui::xtable::XTable,
@@ -8,7 +8,7 @@ use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::GUID;
 
 pub struct WriterTable {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<Value>>,
 }
 
 impl WriterTable {
@@ -39,30 +39,30 @@ impl WriterTable {
                     ..
                 } = *writer;
 
-                let guid = format!("{}", guid.display());
-                let topic_name = writer.topic_name().unwrap_or("").to_string();
-                let type_name = writer.type_name().unwrap_or("-").to_string();
-                let byte_count = format!("{total_byte_count}");
-                let message_count = format!("{total_msg_count}");
-                let avg_bitrate = format!("{avg_bitrate:.2}");
-                let avg_msgrate = format!("{avg_msgrate:.2}");
+                let guid = format!("{}", guid.display()).into();
+                let topic_name = writer.topic_name().unwrap_or("").into();
+                let type_name = writer.type_name().unwrap_or("-").into();
+                let byte_count = total_byte_count.try_into().unwrap();
+                let message_count = total_msg_count.try_into().unwrap();
+                let avg_bitrate = avg_bitrate.try_into().unwrap();
+                let avg_msgrate = avg_msgrate.try_into().unwrap();
                 let frag_msg_count = if frag_messages.is_empty() {
-                    "-".to_string()
+                    Value::None
                 } else {
-                    format!("{}", frag_messages.len())
+                    frag_messages.len().try_into().unwrap()
                 };
                 let last_sn = last_sn
-                    .map(|sn| format!("{}", sn.0))
-                    .unwrap_or_else(|| "-".to_string());
+                    .map(|sn| sn.0.try_into().unwrap())
+                    .unwrap_or(Value::None);
 
                 let heartbeat_range = match heartbeat {
                     Some(heartbeat) => {
                         let HeartbeatState {
                             first_sn, last_sn, ..
                         } = heartbeat;
-                        format!("{first_sn}..{last_sn}")
+                        format!("{first_sn}..{last_sn}").into()
                     }
-                    None => "-".to_string(),
+                    None => Value::None,
                 };
 
                 vec![
@@ -170,5 +170,9 @@ impl WriterTableState {
 
     pub fn toggle_show(&mut self) {
         self.table_state.toggle_show();
+    }
+
+    pub fn toggle_sort(&mut self) {
+        self.table_state.toggle_sort();
     }
 }

@@ -1,3 +1,4 @@
+use super::{value::Value, xtable::XTableState};
 use crate::{
     state::{ReaderState, State},
     ui::xtable::XTable,
@@ -6,10 +7,8 @@ use crate::{
 use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::GUID;
 
-use super::xtable::XTableState;
-
 pub struct ReaderTable {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<Value>>,
 }
 
 impl ReaderTable {
@@ -32,19 +31,19 @@ impl ReaderTable {
                     ..
                 } = *entity;
 
-                let guid = format!("{}", guid.display());
+                let guid = format!("{}", guid.display()).into();
                 let sn = match last_sn {
-                    Some(sn) => format!("{sn}"),
-                    None => "-".to_string(),
+                    Some(sn) => sn.into(),
+                    None => Value::None,
                 };
-                let type_name = entity.type_name().unwrap_or("").to_string();
-                let topic_name = entity.topic_name().unwrap_or("").to_string();
+                let type_name = entity.type_name().unwrap_or("").to_string().into();
+                let topic_name = entity.topic_name().unwrap_or("").to_string().into();
                 let missing_sn = match acknack {
-                    Some(acknack) => format!("{:?}", acknack.missing_sn),
-                    None => "-".to_string(),
+                    Some(acknack) => format!("{:?}", acknack.missing_sn).into(),
+                    None => Value::None,
                 };
-                let total_acks = format!("{total_acknack_count}");
-                let avg_ack_rate = format!("{avg_acknack_rate:.2}");
+                let total_acks = total_acknack_count.try_into().unwrap();
+                let avg_ack_rate = avg_acknack_rate.into();
 
                 vec![
                     guid,
@@ -142,5 +141,9 @@ impl ReaderTableState {
 
     pub fn toggle_show(&mut self) {
         self.table_state.toggle_show();
+    }
+
+    pub fn toggle_sort(&mut self) {
+        self.table_state.toggle_sort();
     }
 }

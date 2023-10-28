@@ -1,4 +1,4 @@
-use super::xtable::XTableState;
+use super::{value::Value, xtable::XTableState};
 use crate::{
     state::{State, Statistics},
     ui::xtable::XTable,
@@ -6,7 +6,7 @@ use crate::{
 use ratatui::{prelude::*, widgets::StatefulWidget};
 
 pub struct StatTable {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<Value>>,
 }
 
 impl StatTable {
@@ -22,27 +22,27 @@ impl StatTable {
         } = state.stat;
 
         let rows = vec![
-            vec!["packets".to_string(), format!("{packet_count}")],
-            vec!["data submsg".to_string(), format!("{data_submsg_count}")],
+            vec!["packets".into(), format!("{packet_count}").into()],
+            vec!["data submsg".into(), format!("{data_submsg_count}").into()],
             vec![
-                "datafrag submsg".to_string(),
-                format!("{datafrag_submsg_count}"),
+                "datafrag submsg".into(),
+                format!("{datafrag_submsg_count}").into(),
             ],
             vec![
-                "acknack submsg".to_string(),
-                format!("{acknack_submsg_count}"),
+                "acknack submsg".into(),
+                format!("{acknack_submsg_count}").into(),
             ],
             vec![
-                "ackfrag submsg".to_string(),
-                format!("{ackfrag_submsg_count}"),
+                "ackfrag submsg".into(),
+                format!("{ackfrag_submsg_count}").into(),
             ],
             vec![
-                "heartbeat submsg".to_string(),
-                format!("{heartbeat_submsg_count}"),
+                "heartbeat submsg".into(),
+                format!("{heartbeat_submsg_count}").into(),
             ],
             vec![
-                "heartbeat_frag submsg".to_string(),
-                format!("{heartbeat_frag_submsg_count}"),
+                "heartbeat_frag submsg".into(),
+                format!("{heartbeat_frag_submsg_count}").into(),
             ],
         ];
 
@@ -117,5 +117,9 @@ impl StatTableState {
 
     pub fn toggle_show(&mut self) {
         self.table_state.toggle_show();
+    }
+
+    pub fn toggle_sort(&mut self) {
+        self.table_state.toggle_sort();
     }
 }

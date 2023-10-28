@@ -1,4 +1,4 @@
-use super::xtable::XTableState;
+use super::{value::Value, xtable::XTableState};
 use crate::{
     state::State,
     ui::xtable::XTable,
@@ -8,7 +8,7 @@ use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::structure::locator::Locator;
 
 pub struct ParticipantTable {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<Value>>,
 }
 
 impl ParticipantTable {
@@ -32,14 +32,14 @@ impl ParticipantTable {
             }
         };
 
-        let rows: Vec<_> = participants
+        let rows: Vec<Vec<Value>> = participants
             .into_iter()
             .map(|(guid_prefix, part)| {
-                let guid_prefix = format!("{}", guid_prefix.display());
+                let guid_prefix = format!("{}", guid_prefix.display()).into();
                 let unicast_locator_list =
-                    format_locator_list(part.unicast_locator_list.as_deref());
+                    format_locator_list(part.unicast_locator_list.as_deref()).into();
                 let multicast_locator_list =
-                    format_locator_list(part.multicast_locator_list.as_deref());
+                    format_locator_list(part.multicast_locator_list.as_deref()).into();
 
                 vec![guid_prefix, unicast_locator_list, multicast_locator_list]
             })
@@ -121,5 +121,9 @@ impl ParticipantTableState {
 
     pub fn toggle_show(&mut self) {
         self.table_state.toggle_show();
+    }
+
+    pub fn toggle_sort(&mut self) {
+        self.table_state.toggle_sort();
     }
 }

@@ -1,9 +1,9 @@
-use super::xtable::XTableState;
+use super::{value::Value, xtable::XTableState};
 use crate::{state::State, ui::xtable::XTable};
 use ratatui::{prelude::*, widgets::StatefulWidget};
 
 pub struct TopicTable {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<Value>>,
 }
 
 impl TopicTable {
@@ -14,9 +14,9 @@ impl TopicTable {
         let rows: Vec<_> = topics
             .into_iter()
             .map(|(topic_name, topic)| {
-                let topic_name = topic_name.clone();
-                let n_readers = topic.readers.len().to_string();
-                let n_writers = topic.writers.len().to_string();
+                let topic_name = topic_name.clone().into();
+                let n_readers = topic.readers.len().try_into().unwrap();
+                let n_writers = topic.writers.len().try_into().unwrap();
                 vec![topic_name, n_readers, n_writers]
             })
             .collect();
@@ -93,5 +93,9 @@ impl TopicTableState {
 
     pub fn toggle_show(&mut self) {
         self.table_state.toggle_show();
+    }
+
+    pub fn toggle_sort(&mut self) {
+        self.table_state.toggle_sort();
     }
 }

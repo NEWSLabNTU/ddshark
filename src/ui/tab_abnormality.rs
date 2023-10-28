@@ -1,4 +1,4 @@
-use super::xtable::XTableState;
+use super::{value::Value, xtable::XTableState};
 use crate::{
     state::{Abnormality, State},
     ui::xtable::XTable,
@@ -8,7 +8,7 @@ use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::GUID;
 
 pub struct AbnormalityTable {
-    rows: Vec<Vec<String>>,
+    rows: Vec<Vec<Value>>,
 }
 
 impl AbnormalityTable {
@@ -16,7 +16,7 @@ impl AbnormalityTable {
         let mut abnormalities: Vec<_> = state.abnormalities.iter().collect();
         abnormalities.sort_unstable_by(|lhs, rhs| lhs.when.cmp(&rhs.when).reverse());
 
-        let rows: Vec<_> = abnormalities
+        let rows: Vec<Vec<Value>> = abnormalities
             .into_iter()
             .map(|report| {
                 let Abnormality {
@@ -31,11 +31,14 @@ impl AbnormalityTable {
                     None => "-".to_string(),
                 };
 
-                let when = when.to_rfc3339();
-                let reader_id = guid_to_string(reader_guid);
-                let writer_id = guid_to_string(writer_guid);
-                let topic_name = topic_name.to_owned().unwrap_or_else(|| "-".to_string());
-                let desc = desc.clone();
+                let when = when.to_rfc3339().into();
+                let reader_id = guid_to_string(reader_guid).into();
+                let writer_id = guid_to_string(writer_guid).into();
+                let topic_name = topic_name
+                    .to_owned()
+                    .unwrap_or_else(|| "-".to_string())
+                    .into();
+                let desc = desc.clone().into();
 
                 vec![when, writer_id, reader_id, topic_name, desc]
             })
@@ -121,5 +124,9 @@ impl AbnormalityTableState {
 
     pub fn toggle_show(&mut self) {
         self.table_state.toggle_show();
+    }
+
+    pub fn toggle_sort(&mut self) {
+        self.table_state.toggle_sort();
     }
 }

@@ -4,8 +4,17 @@ mod tab_reader;
 mod tab_stat;
 mod tab_topic;
 mod tab_writer;
+mod value;
 mod xtable;
 
+use self::{
+    tab_abnormality::{AbnormalityTable, AbnormalityTableState},
+    tab_participant::{ParticipantTable, ParticipantTableState},
+    tab_reader::{ReaderTable, ReaderTableState},
+    tab_stat::{StatTable, StatTableState},
+    tab_topic::{TopicTable, TopicTableState},
+    tab_writer::{WriterTable, WriterTableState},
+};
 use crate::state::State;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -28,15 +37,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::error;
-
-use self::{
-    tab_abnormality::{AbnormalityTable, AbnormalityTableState},
-    tab_participant::{ParticipantTable, ParticipantTableState},
-    tab_reader::{ReaderTable, ReaderTableState},
-    tab_stat::{StatTable, StatTableState},
-    tab_topic::{TopicTable, TopicTableState},
-    tab_writer::{WriterTable, WriterTableState},
-};
 
 const TAB_TITLES: &[&str] = &[
     "Participants",
@@ -153,6 +153,9 @@ impl Tui {
                     },
                     C::Char('h') => self.focus = Focus::Help,
                     C::Char('s') => {
+                        self.toggle_sort();
+                    }
+                    C::Char('v') => {
                         self.toggle_show();
                     }
                     // C::Char('r') => self.logging = !self.logging,
@@ -294,9 +297,13 @@ TAB       Next tab
 Shift+TAB Previous tab
 ↑         Previous item
 ↓         Next item
+←         Previous column
+→         Next column
 PageUp    Previous page
 PageDown  Next page
 h         Show help
+s         Sort by selected column
+v         Hide/Show column
 a         Close dialog or exit
 q         Close dialog or exit
 ",
@@ -418,6 +425,18 @@ q         Close dialog or exit
             TAB_IDX_TOPIC => self.tab_topic.toggle_show(),
             TAB_IDX_STATISTICS => self.tab_stat.toggle_show(),
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.toggle_show(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn toggle_sort(&mut self) {
+        match self.tab_index {
+            TAB_IDX_PARTICIPANT => self.tab_participant.toggle_sort(),
+            TAB_IDX_WRITER => self.tab_writer.toggle_sort(),
+            TAB_IDX_READER => self.tab_reader.toggle_sort(),
+            TAB_IDX_TOPIC => self.tab_topic.toggle_sort(),
+            TAB_IDX_STATISTICS => self.tab_stat.toggle_sort(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.toggle_sort(),
             _ => unreachable!(),
         }
     }

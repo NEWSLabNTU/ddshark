@@ -1,3 +1,4 @@
+use super::value::Value;
 use itertools::izip;
 use ratatui::{
     layout::Constraint,
@@ -9,11 +10,11 @@ use ratatui::{
 pub struct XTable<'a> {
     title: &'a str,
     header: &'a [&'a str],
-    rows: &'a [Vec<String>],
+    rows: &'a [Vec<Value>],
 }
 
 impl<'a> XTable<'a> {
-    pub fn new(title: &'a str, header: &'a [&str], rows: &'a [Vec<String>]) -> Self {
+    pub fn new(title: &'a str, header: &'a [&str], rows: &'a [Vec<Value>]) -> Self {
         Self {
             header,
             rows,
@@ -26,11 +27,64 @@ impl<'a> StatefulWidget for XTable<'a> {
     type State = XTableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let widths: Vec<_> = izip!(0.., &state.show, self.header)
+        let mut rows: Vec<_> = self.rows.iter().collect();
+        if let Some(sort) = &state.sort {
+            rows.sort_unstable_by(|lrow, rrow| {
+                let lhs = &lrow[sort.column_index];
+                let rhs = &rrow[sort.column_index];
+                let ord = lhs.partial_cmp(rhs).unwrap();
+
+                if sort.ascending {
+                    ord
+                } else {
+                    ord.reverse()
+                }
+            });
+        }
+
+        let header: Vec<String> = izip!(0.., &state.show, self.header)
+            .map(|(index, &show, title)| {
+                if show {
+                    let sort_symbol = match &state.sort {
+                        Some(sort) if sort.column_index == index => {
+                            if sort.ascending {
+                                "↑"
+                            } else {
+                                "↓"
+                            }
+                        }
+                        _ => "",
+                    };
+
+                    format!("{title}{sort_symbol}")
+                } else {
+                    let ch = title.chars().next().unwrap_or(' ');
+                    format!("{ch}")
+                }
+            })
+            .collect();
+
+        let rows: Vec<Vec<String>> = rows
+            .iter()
+            .cloned()
+            .map(|row| {
+                let row: Vec<String> = izip!(&state.show, row)
+                    .map(|(&show, value)| {
+                        if show {
+                            value.to_string()
+                        } else {
+                            "".to_string()
+                        }
+                    })
+                    .collect();
+                row
+            })
+            .collect();
+
+        let widths: Vec<_> = izip!(0.., &state.show, &header)
             .map(|(idx, &show, title)| {
                 if show {
-                    let max_len = self
-                        .rows
+                    let max_len = rows
                         .iter()
                         .map(|row| row[idx].len())
                         .max()
@@ -43,48 +97,40 @@ impl<'a> StatefulWidget for XTable<'a> {
             })
             .collect();
 
-        let header = {
-            let iter = izip!(0.., &state.show, self.header);
-            Row::new(iter.map(|(index, &show, title)| {
-                let cell: Cell = if show {
-                    title.to_string().into()
-                } else {
-                    let ch = title.chars().next().unwrap_or(' ');
-                    format!("{ch}").into()
-                };
-
-                let mut style = Style::default()
-                    .add_modifier(Modifier::BOLD)
-                    .add_modifier(Modifier::UNDERLINED);
-
-                if Some(index) == state.column_index {
-                    style = style.fg(Color::Black).bg(Color::Gray);
-                }
-
-                cell.style(style)
-            }))
-        };
-        let rows: Vec<_> = self
-            .rows
-            .iter()
+        let rows: Vec<_> = rows
+            .into_iter()
             .map(|row| {
-                let row = izip!(0.., &state.show, row).map(|(index, &show, value)| {
-                    let cell: Cell = if show {
-                        value.to_string().into()
-                    } else {
-                        " ".to_string().into()
-                    };
-                    let mut style = Style::default();
+                let row: Vec<_> = row
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, text)| {
+                        let cell: Cell = text.into();
+                        let mut style = Style::default();
 
-                    if Some(index) == state.column_index {
-                        style = style.add_modifier(Modifier::BOLD);
-                    }
+                        if Some(index) == state.column_index {
+                            style = style.add_modifier(Modifier::BOLD);
+                        }
 
-                    cell.style(style)
-                });
+                        cell.style(style)
+                    })
+                    .collect();
+
                 Row::new(row)
             })
             .collect();
+
+        let header = Row::new(izip!(0.., header).map(|(index, title)| {
+            let cell: Cell = title.into();
+            let mut style = Style::default()
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED);
+
+            if Some(index) == state.column_index {
+                style = style.fg(Color::Black).bg(Color::Gray);
+            }
+
+            cell.style(style)
+        }));
 
         let table_block = Block::default().title(self.title).borders(Borders::ALL);
 
@@ -119,6 +165,7 @@ pub struct XTableState {
     page_height: usize,
     column_index: Option<usize>,
     show: Vec<bool>,
+    sort: Option<Sort>,
 }
 
 impl XTableState {
@@ -133,6 +180,7 @@ impl XTableState {
             num_columns: 0,
             column_index: None,
             show: vec![],
+            sort: None,
         }
     }
 
@@ -223,4 +271,30 @@ impl XTableState {
             self.show[column_index] = !self.show[column_index];
         }
     }
+
+    pub fn toggle_sort(&mut self) {
+        if let Some(column_index) = self.column_index {
+            if let Some(sort) = &mut self.sort {
+                if sort.column_index == column_index {
+                    sort.ascending = !sort.ascending;
+                } else {
+                    *sort = Sort {
+                        column_index,
+                        ascending: true,
+                    };
+                }
+            } else {
+                self.sort = Some(Sort {
+                    column_index,
+                    ascending: true,
+                });
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Sort {
+    pub column_index: usize,
+    pub ascending: bool,
 }
