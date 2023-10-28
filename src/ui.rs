@@ -152,6 +152,9 @@ impl Tui {
                         Focus::Help => self.focus = Focus::Dashboard,
                     },
                     C::Char('h') => self.focus = Focus::Help,
+                    C::Char('s') => {
+                        self.toggle_show();
+                    }
                     // C::Char('r') => self.logging = !self.logging,
                     C::Up => {
                         self.key_up();
@@ -159,8 +162,12 @@ impl Tui {
                     C::Down => {
                         self.key_down();
                     }
-                    C::Left => {}
-                    C::Right => {}
+                    C::Left => {
+                        self.key_left();
+                    }
+                    C::Right => {
+                        self.key_right();
+                    }
                     C::PageUp => {
                         self.key_page_up();
                     }
@@ -375,6 +382,42 @@ q         Close dialog or exit
             TAB_IDX_TOPIC => self.tab_topic.last_item(),
             TAB_IDX_STATISTICS => self.tab_stat.last_item(),
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.last_item(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn key_left(&mut self) {
+        match self.tab_index {
+            TAB_IDX_PARTICIPANT => self.tab_participant.previous_column(),
+            TAB_IDX_WRITER => self.tab_writer.previous_column(),
+            TAB_IDX_READER => self.tab_reader.previous_column(),
+            TAB_IDX_TOPIC => self.tab_topic.previous_column(),
+            TAB_IDX_STATISTICS => self.tab_stat.previous_column(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.previous_column(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn key_right(&mut self) {
+        match self.tab_index {
+            TAB_IDX_PARTICIPANT => self.tab_participant.next_column(),
+            TAB_IDX_WRITER => self.tab_writer.next_column(),
+            TAB_IDX_READER => self.tab_reader.next_column(),
+            TAB_IDX_TOPIC => self.tab_topic.next_column(),
+            TAB_IDX_STATISTICS => self.tab_stat.next_column(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.next_column(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn toggle_show(&mut self) {
+        match self.tab_index {
+            TAB_IDX_PARTICIPANT => self.tab_participant.toggle_show(),
+            TAB_IDX_WRITER => self.tab_writer.toggle_show(),
+            TAB_IDX_READER => self.tab_reader.toggle_show(),
+            TAB_IDX_TOPIC => self.tab_topic.toggle_show(),
+            TAB_IDX_STATISTICS => self.tab_stat.toggle_show(),
+            TAB_IDX_ABNORMALITIES => self.tab_abnormality.toggle_show(),
             _ => unreachable!(),
         }
     }

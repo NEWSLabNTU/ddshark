@@ -1,3 +1,4 @@
+use itertools::izip;
 use ratatui::{
     layout::Constraint,
     prelude::{Rect, *},
@@ -25,34 +26,64 @@ impl<'a> StatefulWidget for XTable<'a> {
     type State = XTableState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let widths: Vec<_> = self
-            .header
-            .iter()
-            .enumerate()
-            .map(|(idx, title)| {
-                let max_len = self
-                    .rows
-                    .iter()
-                    .map(|row| row[idx].len())
-                    .max()
-                    .unwrap_or(0)
-                    .max(title.len());
-                Constraint::Max(max_len as u16)
+        let widths: Vec<_> = izip!(0.., &state.show, self.header)
+            .map(|(idx, &show, title)| {
+                if show {
+                    let max_len = self
+                        .rows
+                        .iter()
+                        .map(|row| row[idx].len())
+                        .max()
+                        .unwrap_or(0)
+                        .max(title.len());
+                    Constraint::Max(max_len as u16)
+                } else {
+                    Constraint::Max(1)
+                }
             })
             .collect();
 
-        let header = Row::new(self.header.iter().map(|title| {
-            let cell: Cell = title.to_string().into();
-            cell.style(
-                Style::default()
+        let header = {
+            let iter = izip!(0.., &state.show, self.header);
+            Row::new(iter.map(|(index, &show, title)| {
+                let cell: Cell = if show {
+                    title.to_string().into()
+                } else {
+                    let ch = title.chars().next().unwrap_or(' ');
+                    format!("{ch}").into()
+                };
+
+                let mut style = Style::default()
                     .add_modifier(Modifier::BOLD)
-                    .add_modifier(Modifier::UNDERLINED),
-            )
-        }));
+                    .add_modifier(Modifier::UNDERLINED);
+
+                if Some(index) == state.column_index {
+                    style = style.fg(Color::Black).bg(Color::Gray);
+                }
+
+                cell.style(style)
+            }))
+        };
         let rows: Vec<_> = self
             .rows
             .iter()
-            .map(|row| Row::new(row.iter().cloned()))
+            .map(|row| {
+                let row = izip!(0.., &state.show, row).map(|(index, &show, value)| {
+                    let cell: Cell = if show {
+                        value.to_string().into()
+                    } else {
+                        " ".to_string().into()
+                    };
+                    let mut style = Style::default();
+
+                    if Some(index) == state.column_index {
+                        style = style.add_modifier(Modifier::BOLD);
+                    }
+
+                    cell.style(style)
+                });
+                Row::new(row)
+            })
             .collect();
 
         let table_block = Block::default().title(self.title).borders(Borders::ALL);
@@ -60,6 +91,14 @@ impl<'a> StatefulWidget for XTable<'a> {
         // Save the # of entires
         state.num_entries = rows.len();
         state.page_height = (area.height as usize).saturating_sub(3).max(1);
+        state.num_columns = self.header.len();
+
+        if let Some(column_index) = state.column_index {
+            if column_index >= self.header.len() {
+                state.column_index = None;
+            }
+        }
+        state.show.resize(self.header.len(), true);
 
         let table = Table::new(rows)
             .style(Style::default().fg(Color::White))
@@ -76,7 +115,10 @@ impl<'a> StatefulWidget for XTable<'a> {
 pub struct XTableState {
     table_state: TableState,
     num_entries: usize,
+    num_columns: usize,
     page_height: usize,
+    column_index: Option<usize>,
+    show: Vec<bool>,
 }
 
 impl XTableState {
@@ -88,6 +130,9 @@ impl XTableState {
             table_state,
             num_entries: 0,
             page_height: 1,
+            num_columns: 0,
+            column_index: None,
+            show: vec![],
         }
     }
 
@@ -138,6 +183,44 @@ impl XTableState {
     pub fn last_item(&mut self) {
         if let Some(idx) = self.num_entries.checked_sub(1) {
             self.table_state.select(Some(idx));
+        }
+    }
+
+    pub fn next_column(&mut self) {
+        if let Some(column_index) = &mut self.column_index {
+            *column_index = if let Some(max_index) = self.num_columns.checked_sub(1) {
+                (*column_index + 1).clamp(0, max_index)
+            } else {
+                0
+            };
+        } else if self.num_columns > 0 {
+            self.column_index = Some(0);
+        }
+    }
+
+    pub fn previous_column(&mut self) {
+        if let Some(column_index) = &mut self.column_index {
+            *column_index = column_index.saturating_sub(1);
+        } else if self.num_columns > 0 {
+            self.column_index = Some(0);
+        }
+    }
+
+    pub fn first_column(&mut self) {
+        if self.num_columns > 0 {
+            self.column_index = Some(0);
+        }
+    }
+
+    pub fn last_column(&mut self) {
+        if let Some(max_index) = self.num_columns.checked_sub(1) {
+            self.column_index = Some(max_index);
+        }
+    }
+
+    pub fn toggle_show(&mut self) {
+        if let Some(column_index) = self.column_index {
+            self.show[column_index] = !self.show[column_index];
         }
     }
 }

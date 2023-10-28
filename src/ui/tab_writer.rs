@@ -151,4 +151,24 @@ impl WriterTableState {
     pub fn last_item(&mut self) {
         self.table_state.last_item();
     }
+
+    pub fn previous_column(&mut self) {
+        self.table_state.previous_column();
+    }
+
+    pub fn next_column(&mut self) {
+        self.table_state.next_column();
+    }
+
+    pub fn first_column(&mut self) {
+        self.table_state.first_column();
+    }
+
+    pub fn last_column(&mut self) {
+        self.table_state.last_column();
+    }
+
+    pub fn toggle_show(&mut self) {
+        self.table_state.toggle_show();
+    }
 }
