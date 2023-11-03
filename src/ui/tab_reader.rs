@@ -26,7 +26,7 @@ impl ReaderTable {
                 let ReaderState {
                     last_sn,
                     total_acknack_count,
-                    avg_acknack_rate,
+                    ref acknack_rate_stat,
                     ref acknack,
                     ..
                 } = *entity;
@@ -43,7 +43,7 @@ impl ReaderTable {
                     None => Value::None,
                 };
                 let total_acks = total_acknack_count.try_into().unwrap();
-                let avg_ack_rate = avg_acknack_rate.into();
+                let avg_ack_rate = acknack_rate_stat.stat().mean.into();
 
                 vec![
                     guid,

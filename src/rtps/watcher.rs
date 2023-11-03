@@ -2,7 +2,8 @@ use super::{packet_decoder::RtpsPacket, PacketSource};
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
-        NackFragEvent, PacketHeaders, ParticipantInfo, RtpsSubmsgEvent, UpdateEvent,
+        NackFragEvent, PacketHeaders, ParticipantInfo, RtpsSubmsgEvent, RtpsSubmsgEventKind,
+        UpdateEvent,
     },
     utils::EntityIdExt,
 };
@@ -50,9 +51,10 @@ struct Interpreter {
     src_vendor_id: VendorId,
     src_guid_prefix: GuidPrefix,
     dst_guid_prefix: Option<GuidPrefix>,
-    timestamp: Option<Timestamp>,
     unicast_locator_list: Option<Vec<Locator>>,
     multicast_locator_list: Option<Vec<Locator>>,
+    timestamp: Timestamp,
+    recv_time: chrono::Duration,
 }
 
 pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Result<()> {
@@ -74,7 +76,7 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
                 vlan_header,
                 ipv4_header: Ipv4Repr { src_addr, .. },
                 // udp_header: UdpRepr { src_port, .. },
-                ts,
+                ts: recv_time,
             } = headers;
             let src_port = 0; // TODO: find correct UDP port
             assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
@@ -87,13 +89,15 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
                 src_vendor_id: vendor_id,
                 src_guid_prefix: guid_prefix,
                 dst_guid_prefix: None,
-                timestamp: None,
+                timestamp: Timestamp::INVALID,
                 unicast_locator_list: Some(vec![unicast_locator]),
                 multicast_locator_list: None,
+                recv_time,
             }
         };
 
         let event: UpdateEvent = ParticipantInfo {
+            recv_time: interpreter.recv_time,
             guid_prefix: interpreter.src_guid_prefix,
             unicast_locator_list: interpreter.unicast_locator_list.as_ref().unwrap().clone(),
             multicast_locator_list: None,
@@ -127,36 +131,28 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
 
 fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<UpdateEvent> {
     match &submsg.body {
-        SubmessageBody::Entity(emsg) => match emsg {
-            EntitySubmessage::AckNack(data, _) => {
-                let event = handle_submsg_acknack(interpreter, data);
-                vec![event.into()]
+        SubmessageBody::Entity(emsg) => {
+            let kind = match emsg {
+                EntitySubmessage::AckNack(data, _) => handle_submsg_acknack(interpreter, data),
+                EntitySubmessage::Data(data, _) => handle_submsg_data(interpreter, data),
+                EntitySubmessage::DataFrag(data, _) => handle_submsg_datafrag(interpreter, data),
+                EntitySubmessage::Gap(data, _) => handle_submsg_gap(interpreter, data),
+                EntitySubmessage::Heartbeat(data, _) => handle_submsg_heartbeat(interpreter, data),
+                EntitySubmessage::HeartbeatFrag(data, _) => {
+                    handle_submsg_heartbeatfrag(interpreter, data)
+                }
+                EntitySubmessage::NackFrag(data, _) => handle_submsg_nackfrag(interpreter, data),
+            };
+
+            let event = RtpsSubmsgEvent {
+                recv_time: interpreter.recv_time,
+                rtps_time: interpreter.timestamp,
+                kind,
             }
-            EntitySubmessage::Data(data, _) => {
-                let event = handle_submsg_data(interpreter, data);
-                vec![event.into()]
-            }
-            EntitySubmessage::DataFrag(data, _) => {
-                let event = handle_submsg_datafrag(interpreter, data);
-                vec![event.into()]
-            }
-            EntitySubmessage::Gap(data, _) => {
-                let event = handle_submsg_gap(interpreter, data);
-                vec![event.into()]
-            }
-            EntitySubmessage::Heartbeat(data, _) => {
-                let event = handle_submsg_heartbeat(interpreter, data);
-                vec![event.into()]
-            }
-            EntitySubmessage::HeartbeatFrag(data, _) => {
-                let event = handle_submsg_heartbeatfrag(interpreter, data);
-                vec![event.into()]
-            }
-            EntitySubmessage::NackFrag(data, _) => {
-                let event = handle_submsg_nackfrag(interpreter, data);
-                vec![event.into()]
-            }
-        },
+            .into();
+
+            vec![event]
+        }
         SubmessageBody::Interpreter(imsg) => match imsg {
             InterpreterSubmessage::InfoSource(info, _) => {
                 let InfoSource {
@@ -171,9 +167,10 @@ fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<Upda
                     src_vendor_id: vendor_id,
                     src_guid_prefix: guid_prefix,
                     dst_guid_prefix: interpreter.dst_guid_prefix,
-                    timestamp: None,
+                    timestamp: Timestamp::INVALID,
                     unicast_locator_list: None,
                     multicast_locator_list: None,
+                    recv_time: interpreter.recv_time,
                 };
 
                 vec![]
@@ -193,6 +190,7 @@ fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<Upda
                     guid_prefix: interpreter.src_guid_prefix,
                     unicast_locator_list: info.unicast_locator_list.clone(),
                     multicast_locator_list: info.multicast_locator_list.clone(),
+                    recv_time: interpreter.recv_time,
                 }
                 .into();
 
@@ -202,7 +200,7 @@ fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<Upda
                 let InfoTimestamp { timestamp } = *info;
 
                 if let Some(timestamp) = timestamp {
-                    interpreter.timestamp = Some(timestamp);
+                    interpreter.timestamp = timestamp;
                 };
 
                 vec![]
@@ -211,7 +209,7 @@ fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<Upda
     }
 }
 
-fn handle_submsg_data(interpreter: &Interpreter, data: &Data) -> RtpsSubmsgEvent {
+fn handle_submsg_data(interpreter: &Interpreter, data: &Data) -> RtpsSubmsgEventKind {
     let Data {
         writer_id,
         writer_sn,
@@ -298,7 +296,7 @@ fn handle_submsg_data(interpreter: &Interpreter, data: &Data) -> RtpsSubmsgEvent
     .into()
 }
 
-fn handle_submsg_datafrag(interpreter: &Interpreter, data: &DataFrag) -> RtpsSubmsgEvent {
+fn handle_submsg_datafrag(interpreter: &Interpreter, data: &DataFrag) -> RtpsSubmsgEventKind {
     let DataFrag {
         writer_id,
         writer_sn,
@@ -343,7 +341,7 @@ fn handle_submsg_datafrag(interpreter: &Interpreter, data: &DataFrag) -> RtpsSub
     .into()
 }
 
-fn handle_submsg_gap(interpreter: &Interpreter, data: &Gap) -> RtpsSubmsgEvent {
+fn handle_submsg_gap(interpreter: &Interpreter, data: &Gap) -> RtpsSubmsgEventKind {
     let Gap {
         reader_id,
         writer_id,
@@ -364,7 +362,7 @@ fn handle_submsg_gap(interpreter: &Interpreter, data: &Gap) -> RtpsSubmsgEvent {
     .into()
 }
 
-fn handle_submsg_nackfrag(interpreter: &Interpreter, data: &NackFrag) -> RtpsSubmsgEvent {
+fn handle_submsg_nackfrag(interpreter: &Interpreter, data: &NackFrag) -> RtpsSubmsgEventKind {
     let NackFrag {
         reader_id,
         writer_id,
@@ -393,7 +391,7 @@ fn handle_submsg_nackfrag(interpreter: &Interpreter, data: &NackFrag) -> RtpsSub
     .into()
 }
 
-fn handle_submsg_heartbeat(interpreter: &Interpreter, data: &Heartbeat) -> RtpsSubmsgEvent {
+fn handle_submsg_heartbeat(interpreter: &Interpreter, data: &Heartbeat) -> RtpsSubmsgEventKind {
     let Heartbeat {
         writer_id,
         first_sn,
@@ -414,7 +412,10 @@ fn handle_submsg_heartbeat(interpreter: &Interpreter, data: &Heartbeat) -> RtpsS
     .into()
 }
 
-fn handle_submsg_heartbeatfrag(interpreter: &Interpreter, data: &HeartbeatFrag) -> RtpsSubmsgEvent {
+fn handle_submsg_heartbeatfrag(
+    interpreter: &Interpreter,
+    data: &HeartbeatFrag,
+) -> RtpsSubmsgEventKind {
     let HeartbeatFrag {
         writer_id,
         writer_sn,
@@ -438,7 +439,7 @@ fn handle_submsg_heartbeatfrag(interpreter: &Interpreter, data: &HeartbeatFrag) 
     .into()
 }
 
-fn handle_submsg_acknack(interpreter: &Interpreter, data: &AckNack) -> RtpsSubmsgEvent {
+fn handle_submsg_acknack(interpreter: &Interpreter, data: &AckNack) -> RtpsSubmsgEventKind {
     let AckNack {
         writer_id,
         reader_id,

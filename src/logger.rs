@@ -107,8 +107,8 @@ impl Logger {
                     last_sn,
                     total_msg_count,
                     total_byte_count,
-                    avg_msgrate,
-                    avg_bitrate,
+                    ref msg_rate_stat,
+                    ref bit_rate_stat,
                     ref data,
                     ..
                 } = *writer_state;
@@ -116,6 +116,9 @@ impl Logger {
                 let topic_name = data
                     .as_ref()
                     .map(|data| data.publication_topic_data.topic_name.clone());
+
+                let avg_msgrate = msg_rate_stat.stat().mean;
+                let avg_bitrate = bit_rate_stat.stat().mean;
 
                 let record = WriterRecord {
                     time,
@@ -147,9 +150,11 @@ impl Logger {
                 let ReaderState {
                     last_sn,
                     total_acknack_count,
-                    avg_acknack_rate,
+                    ref acknack_rate_stat,
                     ..
                 } = *reader_state;
+
+                let avg_acknack_rate = acknack_rate_stat.stat().mean;
 
                 let record = ReaderRecord {
                     time,

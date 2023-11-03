@@ -1,4 +1,4 @@
-use crate::logger::Logger;
+use crate::{config::TICK_INTERVAL, logger::Logger, utils::TimedStat};
 use chrono::{DateTime, Local};
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
@@ -64,10 +64,8 @@ pub struct WriterState {
     pub frag_messages: HashMap<SequenceNumber, FragmentedMessage>,
     pub total_msg_count: usize,
     pub total_byte_count: usize,
-    pub acc_msg_count: usize,
-    pub acc_byte_count: usize,
-    pub avg_msgrate: f64,
-    pub avg_bitrate: f64,
+    pub msg_rate_stat: TimedStat,
+    pub bit_rate_stat: TimedStat,
     pub heartbeat: Option<HeartbeatState>,
     pub data: Option<DiscoveredWriterData>,
 }
@@ -86,16 +84,16 @@ impl WriterState {
 
 impl Default for WriterState {
     fn default() -> Self {
+        let window = chrono::Duration::from_std(TICK_INTERVAL).unwrap();
+
         Self {
             frag_messages: HashMap::new(),
             last_sn: None,
-            acc_msg_count: 0,
-            acc_byte_count: 0,
             heartbeat: None,
             total_msg_count: 0,
             total_byte_count: 0,
-            avg_bitrate: 0.0,
-            avg_msgrate: 0.0,
+            msg_rate_stat: TimedStat::new(window),
+            bit_rate_stat: TimedStat::new(window),
             data: None,
         }
     }
@@ -107,8 +105,7 @@ pub struct ReaderState {
     pub acknack: Option<AckNackState>,
     pub last_sn: Option<i64>,
     pub total_acknack_count: usize,
-    pub acc_acknack_count: usize,
-    pub avg_acknack_rate: f64,
+    pub acknack_rate_stat: TimedStat,
 }
 
 impl ReaderState {
@@ -125,13 +122,14 @@ impl ReaderState {
 
 impl Default for ReaderState {
     fn default() -> Self {
+        let window = chrono::Duration::from_std(TICK_INTERVAL).unwrap();
+
         Self {
             last_sn: None,
             data: None,
             acknack: None,
             total_acknack_count: 0,
-            acc_acknack_count: 0,
-            avg_acknack_rate: 0.0,
+            acknack_rate_stat: TimedStat::new(window),
         }
     }
 }

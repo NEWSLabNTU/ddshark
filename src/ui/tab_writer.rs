@@ -33,8 +33,8 @@ impl WriterTable {
                     ref frag_messages,
                     total_msg_count,
                     total_byte_count,
-                    avg_bitrate,
-                    avg_msgrate,
+                    ref bit_rate_stat,
+                    ref msg_rate_stat,
                     ref heartbeat,
                     ..
                 } = *writer;
@@ -44,8 +44,8 @@ impl WriterTable {
                 let type_name = writer.type_name().unwrap_or("-").into();
                 let byte_count = total_byte_count.try_into().unwrap();
                 let message_count = total_msg_count.try_into().unwrap();
-                let avg_bitrate = avg_bitrate.try_into().unwrap();
-                let avg_msgrate = avg_msgrate.try_into().unwrap();
+                let avg_msgrate = msg_rate_stat.stat().mean.into();
+                let avg_bitrate = bit_rate_stat.stat().mean.into();
                 let frag_msg_count = if frag_messages.is_empty() {
                     Value::None
                 } else {

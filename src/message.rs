@@ -10,16 +10,22 @@ use rustdds::{
         locator::Locator,
         sequence_number::{FragmentNumber, SequenceNumberSet},
     },
-    SequenceNumber, GUID,
+    SequenceNumber, Timestamp, GUID,
 };
-use smoltcp::wire::{Ipv4Repr, UdpRepr};
+use smoltcp::wire::Ipv4Repr;
 
 #[derive(Debug, Clone)]
 pub enum UpdateEvent {
     RtpsMsg(RtpsMsgEvent),
     RtpsSubmsg(RtpsSubmsgEvent),
     ParticipantInfo(ParticipantInfo),
-    Tick,
+    Tick(TickEvent),
+}
+
+impl From<TickEvent> for UpdateEvent {
+    fn from(v: TickEvent) -> Self {
+        Self::Tick(v)
+    }
 }
 
 impl From<ParticipantInfo> for UpdateEvent {
@@ -35,7 +41,19 @@ impl From<RtpsSubmsgEvent> for UpdateEvent {
 }
 
 #[derive(Debug, Clone)]
-pub enum RtpsSubmsgEvent {
+pub struct TickEvent {
+    pub recv_time: chrono::Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct RtpsSubmsgEvent {
+    pub recv_time: chrono::Duration,
+    pub rtps_time: Timestamp,
+    pub kind: RtpsSubmsgEventKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum RtpsSubmsgEventKind {
     Data(Box<DataEvent>),
     DataFrag(Box<DataFragEvent>),
     Gap(Box<GapEvent>),
@@ -45,43 +63,43 @@ pub enum RtpsSubmsgEvent {
     HeartbeatFrag(HeartbeatFragEvent),
 }
 
-impl From<NackFragEvent> for RtpsSubmsgEvent {
+impl From<NackFragEvent> for RtpsSubmsgEventKind {
     fn from(v: NackFragEvent) -> Self {
         Self::NackFrag(v)
     }
 }
 
-impl From<DataFragEvent> for RtpsSubmsgEvent {
+impl From<DataFragEvent> for RtpsSubmsgEventKind {
     fn from(v: DataFragEvent) -> Self {
         Self::DataFrag(Box::new(v))
     }
 }
 
-impl From<DataEvent> for RtpsSubmsgEvent {
+impl From<DataEvent> for RtpsSubmsgEventKind {
     fn from(v: DataEvent) -> Self {
         Self::Data(Box::new(v))
     }
 }
 
-impl From<GapEvent> for RtpsSubmsgEvent {
+impl From<GapEvent> for RtpsSubmsgEventKind {
     fn from(v: GapEvent) -> Self {
         Self::Gap(Box::new(v))
     }
 }
 
-impl From<HeartbeatEvent> for RtpsSubmsgEvent {
+impl From<HeartbeatEvent> for RtpsSubmsgEventKind {
     fn from(v: HeartbeatEvent) -> Self {
         Self::Heartbeat(v)
     }
 }
 
-impl From<HeartbeatFragEvent> for RtpsSubmsgEvent {
+impl From<HeartbeatFragEvent> for RtpsSubmsgEventKind {
     fn from(v: HeartbeatFragEvent) -> Self {
         Self::HeartbeatFrag(v)
     }
 }
 
-impl From<AckNackEvent> for RtpsSubmsgEvent {
+impl From<AckNackEvent> for RtpsSubmsgEventKind {
     fn from(v: AckNackEvent) -> Self {
         Self::AckNack(v)
     }
@@ -212,6 +230,7 @@ pub struct NackFragEvent {
 
 #[derive(Debug, Clone)]
 pub struct ParticipantInfo {
+    pub recv_time: chrono::Duration,
     pub guid_prefix: GuidPrefix,
     pub unicast_locator_list: Vec<Locator>,
     pub multicast_locator_list: Option<Vec<Locator>>,

@@ -1,4 +1,4 @@
-use crate::{message::RtpsSubmsgEvent, opts::Opts};
+use crate::{message::RtpsSubmsgEventKind, opts::Opts};
 
 use gethostname::gethostname;
 use mac_address::mac_address_by_name;
@@ -63,7 +63,7 @@ impl TraceHandle {
         }
     }
 
-    pub fn send_trace(&self, _message: &RtpsSubmsgEvent, _topic_name: String) {
+    pub fn send_trace(&self, _message: &RtpsSubmsgEventKind, _topic_name: String) {
         todo!();
     }
 

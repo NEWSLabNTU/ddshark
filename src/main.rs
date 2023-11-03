@@ -1,3 +1,4 @@
+mod config;
 mod logger;
 mod message;
 mod opts;

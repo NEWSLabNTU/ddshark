@@ -1,8 +1,10 @@
 use crate::{
+    config::TICK_INTERVAL,
     logger::Logger,
     message::{
         AckNackEvent, DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent,
-        HeartbeatFragEvent, NackFragEvent, ParticipantInfo, RtpsSubmsgEvent, UpdateEvent,
+        HeartbeatFragEvent, NackFragEvent, ParticipantInfo, RtpsSubmsgEvent, RtpsSubmsgEventKind,
+        TickEvent, UpdateEvent,
     },
     opts::Opts,
     otlp,
@@ -14,8 +16,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::{debug, error, warn};
-
-const TICK_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
@@ -47,6 +47,30 @@ impl Updater {
     }
 
     pub(crate) fn run(mut self) {
+        // Wait for the first message
+        let (first_instant, first_recv_time) = {
+            let Ok(message) = self.rx.recv() else { todo!() };
+
+            let state = self.state.clone();
+            let Ok(mut state) = state.lock() else {
+                error!("INTERNAL ERROR Mutex poision error");
+                todo!();
+            };
+
+            // Remember the difference b/w the current and receipt time.
+            let now = Instant::now();
+            let recv_time = match &message {
+                UpdateEvent::RtpsMsg(_) => todo!(),
+                UpdateEvent::RtpsSubmsg(msg) => msg.recv_time,
+                UpdateEvent::ParticipantInfo(msg) => msg.recv_time,
+                UpdateEvent::Tick(_) => unreachable!(),
+            };
+
+            self.handle_message(&mut state, &message);
+
+            (now, recv_time)
+        };
+
         let mut deadline = Instant::now() + TICK_INTERVAL;
         loop {
             use flume::RecvTimeoutError as E;
@@ -62,7 +86,9 @@ impl Updater {
                         deadline += TICK_INTERVAL;
                     }
 
-                    UpdateEvent::Tick
+                    let elapsed = now.duration_since(first_instant);
+                    let recv_time = first_recv_time + chrono::Duration::from_std(elapsed).unwrap();
+                    TickEvent { recv_time }.into()
                 }
             };
 
@@ -72,74 +98,66 @@ impl Updater {
                 break;
             };
 
-            match message {
-                UpdateEvent::Tick => {
-                    self.handle_tick(&mut state);
-                }
-                UpdateEvent::RtpsMsg(_) => todo!(),
-                UpdateEvent::ParticipantInfo(info) => {
-                    self.handle_participant_info(&mut state, &info);
-                }
-                UpdateEvent::RtpsSubmsg(msg) => match &msg {
-                    RtpsSubmsgEvent::Data(event) => {
-                        self.handle_data_event(&mut state, event);
-                    }
-                    RtpsSubmsgEvent::DataFrag(event) => {
-                        self.handle_data_frag_event(&mut state, event);
-                    }
-                    RtpsSubmsgEvent::Gap(event) => {
-                        self.handle_gap_event(&mut state, event);
-                    }
-                    RtpsSubmsgEvent::Heartbeat(event) => {
-                        self.handle_heartbeat_event(&mut state, event);
-                    }
-                    RtpsSubmsgEvent::AckNack(event) => {
-                        self.handle_acknack_event(&mut state, event);
-                    }
-                    RtpsSubmsgEvent::NackFrag(event) => {
-                        self.handle_nackfrag_event(&mut state, event);
-                    }
-                    RtpsSubmsgEvent::HeartbeatFrag(event) => {
-                        self.handle_heartbeatfrag_event(&mut state, event);
-                    }
-                },
-            }
+            self.handle_message(&mut state, &message);
         }
     }
 
-    fn handle_tick(&mut self, state: &mut State) {
-        const ALPHA: f64 = 0.99;
+    fn handle_message(&mut self, state: &mut State, message: &UpdateEvent) {
+        match message {
+            UpdateEvent::Tick(msg) => {
+                self.handle_tick(state, msg);
+            }
+            UpdateEvent::RtpsMsg(_) => todo!(),
+            UpdateEvent::ParticipantInfo(info) => {
+                self.handle_participant_info(state, info);
+            }
+            UpdateEvent::RtpsSubmsg(msg) => match &msg.kind {
+                RtpsSubmsgEventKind::Data(event) => {
+                    self.handle_data_event(state, msg, event);
+                }
+                RtpsSubmsgEventKind::DataFrag(event) => {
+                    self.handle_data_frag_event(state, msg, event);
+                }
+                RtpsSubmsgEventKind::Gap(event) => {
+                    self.handle_gap_event(state, msg, event);
+                }
+                RtpsSubmsgEventKind::Heartbeat(event) => {
+                    self.handle_heartbeat_event(state, msg, event);
+                }
+                RtpsSubmsgEventKind::AckNack(event) => {
+                    self.handle_acknack_event(state, msg, event);
+                }
+                RtpsSubmsgEventKind::NackFrag(event) => {
+                    self.handle_nackfrag_event(state, msg, event);
+                }
+                RtpsSubmsgEventKind::HeartbeatFrag(event) => {
+                    self.handle_heartbeatfrag_event(state, msg, event);
+                }
+            },
+        }
+    }
 
+    fn handle_tick(&mut self, state: &mut State, msg: &TickEvent) {
         let now = Instant::now();
-        let elapsed_secs = state.tick_since.elapsed().as_secs_f64();
         state.tick_since = now;
+
+        let ts = msg.recv_time;
 
         for participant in state.participants.values_mut() {
             for writer in participant.writers.values_mut() {
-                // update average bitrate
-                let curr_bitrate = (writer.acc_byte_count * 8) as f64 / elapsed_secs;
-                writer.avg_bitrate = writer.avg_bitrate * ALPHA + curr_bitrate * (1.0 - ALPHA);
-                writer.acc_byte_count = 0;
-
-                // update average msgrate
-                let curr_msgrate = writer.acc_msg_count as f64 / elapsed_secs;
-                writer.avg_msgrate = writer.avg_msgrate * ALPHA + curr_msgrate * (1.0 - ALPHA);
-                writer.acc_msg_count = 0;
+                writer.bit_rate_stat.set_last_ts(ts);
+                writer.msg_rate_stat.set_last_ts(ts);
             }
 
-            for readers in participant.readers.values_mut() {
-                // update average acknack rate
-                let curr_rate = readers.acc_acknack_count as f64 / elapsed_secs;
-                readers.avg_acknack_rate =
-                    readers.avg_acknack_rate * ALPHA + curr_rate * (1.0 - ALPHA);
-                readers.acc_acknack_count = 0;
+            for reader in participant.readers.values_mut() {
+                reader.acknack_rate_stat.set_last_ts(ts);
             }
         }
 
         self.logger.save(state).unwrap();
     }
 
-    fn handle_data_event(&self, state: &mut State, event: &DataEvent) {
+    fn handle_data_event(&self, state: &mut State, msg: &RtpsSubmsgEvent, event: &DataEvent) {
         state.stat.packet_count += 1;
         state.stat.data_submsg_count += 1;
 
@@ -157,11 +175,19 @@ impl Updater {
 
             // Increase message count
             writer.total_msg_count += 1;
-            writer.acc_msg_count += 1;
+            let result = writer.msg_rate_stat.push(msg.recv_time, 1f64);
+            if result.is_err() {
+                todo!();
+            }
 
             // Increase byte count
             writer.total_byte_count += event.payload_size;
-            writer.acc_byte_count += event.payload_size;
+            let result = writer
+                .bit_rate_stat
+                .push(msg.recv_time, (event.payload_size * 8) as f64);
+            if result.is_err() {
+                todo!();
+            }
         }
 
         // println!(
@@ -274,7 +300,12 @@ impl Updater {
         }
     }
 
-    fn handle_data_frag_event(&self, state: &mut State, event: &DataFragEvent) {
+    fn handle_data_frag_event(
+        &self,
+        state: &mut State,
+        msg: &RtpsSubmsgEvent,
+        event: &DataFragEvent,
+    ) {
         state.stat.packet_count += 1;
         state.stat.datafrag_submsg_count += 1;
 
@@ -294,10 +325,6 @@ impl Updater {
             .writers
             .entry(writer_guid.entity_id)
             .or_default();
-
-        // Increase byte count
-        writer.total_byte_count += event.payload_size;
-        writer.acc_byte_count += event.payload_size;
 
         // println!(
         //     "{}\t{}\t{:.2}bps",
@@ -399,13 +426,24 @@ impl Updater {
 
                     // Increase message count
                     writer.total_msg_count += 1;
-                    writer.acc_msg_count += 1;
+                    let result = writer.msg_rate_stat.push(msg.recv_time, 1.0);
+                    if result.is_err() {
+                        todo!();
+                    }
+
+                    writer.total_byte_count += event.payload_size;
+                    let result = writer
+                        .bit_rate_stat
+                        .push(msg.recv_time, (event.payload_size * 8) as f64);
+                    if result.is_err() {
+                        todo!();
+                    }
                 }
             }
         }
     }
 
-    fn handle_gap_event(&self, state: &mut State, _event: &GapEvent) {
+    fn handle_gap_event(&self, state: &mut State, _msg: &RtpsSubmsgEvent, _event: &GapEvent) {
         state.stat.packet_count += 1;
 
         // let GapEvent {
@@ -427,7 +465,12 @@ impl Updater {
         // todo!();
     }
 
-    fn handle_heartbeat_event(&self, state: &mut State, event: &HeartbeatEvent) {
+    fn handle_heartbeat_event(
+        &self,
+        state: &mut State,
+        _msg: &RtpsSubmsgEvent,
+        event: &HeartbeatEvent,
+    ) {
         state.stat.packet_count += 1;
         state.stat.heartbeat_submsg_count += 1;
 
@@ -467,7 +510,12 @@ impl Updater {
         }
     }
 
-    fn handle_acknack_event(&self, state: &mut State, event: &AckNackEvent) {
+    fn handle_acknack_event(
+        &self,
+        state: &mut State,
+        _msg: &RtpsSubmsgEvent,
+        event: &AckNackEvent,
+    ) {
         // Update statistics
         state.stat.packet_count += 1;
         state.stat.acknack_submsg_count += 1;
@@ -483,7 +531,7 @@ impl Updater {
             .or_default();
 
         reader.total_acknack_count += 1;
-        reader.acc_acknack_count += 1;
+        // reader.acc_acknack_count += 1;
 
         // Save missing sequence numbers
         if let Some(acknack) = &reader.acknack {
@@ -502,12 +550,22 @@ impl Updater {
         reader.last_sn = Some(event.base_sn);
     }
 
-    fn handle_nackfrag_event(&self, state: &mut State, _event: &NackFragEvent) {
+    fn handle_nackfrag_event(
+        &self,
+        state: &mut State,
+        _msg: &RtpsSubmsgEvent,
+        _event: &NackFragEvent,
+    ) {
         state.stat.packet_count += 1;
         state.stat.ackfrag_submsg_count += 1;
     }
 
-    fn handle_heartbeatfrag_event(&self, state: &mut State, _event: &HeartbeatFragEvent) {
+    fn handle_heartbeatfrag_event(
+        &self,
+        state: &mut State,
+        _msg: &RtpsSubmsgEvent,
+        _event: &HeartbeatFragEvent,
+    ) {
         state.stat.packet_count += 1;
         state.stat.heartbeat_frag_submsg_count += 1;
     }
@@ -517,6 +575,7 @@ impl Updater {
             guid_prefix,
             ref unicast_locator_list,
             ref multicast_locator_list,
+            ..
         } = *info;
 
         let participant = state.participants.entry(guid_prefix).or_default();

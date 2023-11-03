@@ -171,3 +171,21 @@ impl From<f64> for Value {
         Self::Float(value)
     }
 }
+
+impl From<Option<f32>> for Value {
+    fn from(value: Option<f32>) -> Self {
+        match value {
+            Some(value) => Self::Float(value as f64),
+            None => Self::None,
+        }
+    }
+}
+
+impl From<Option<f64>> for Value {
+    fn from(value: Option<f64>) -> Self {
+        match value {
+            Some(value) => Self::Float(value),
+            None => Self::None,
+        }
+    }
+}
