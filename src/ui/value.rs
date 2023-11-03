@@ -1,4 +1,3 @@
-use ratatui::{text::Text, widgets::Cell};
 use std::{
     cmp::Ordering,
     fmt::{self, Display},

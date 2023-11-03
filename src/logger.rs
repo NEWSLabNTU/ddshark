@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use rustdds::{
     structure::guid::{EntityId, GuidPrefix},
     GUID,
@@ -12,7 +13,7 @@ use std::{
     collections::HashMap,
     env,
     fs::{self, File},
-    io::{self, BufWriter},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -60,6 +61,8 @@ impl Logger {
 
     pub fn save(&mut self, state: &State) -> io::Result<()> {
         use std::collections::hash_map::Entry as E;
+
+        let time = Utc::now();
 
         for (&guid_prefix, part_state) in &state.participants {
             let part_logger = match self.participants.entry(guid_prefix) {
@@ -115,6 +118,7 @@ impl Logger {
                     .map(|data| data.publication_topic_data.topic_name.clone());
 
                 let record = WriterRecord {
+                    time,
                     last_sn: last_sn.map(|sn| sn.0),
                     total_msg_count,
                     total_byte_count,
@@ -148,6 +152,7 @@ impl Logger {
                 } = *reader_state;
 
                 let record = ReaderRecord {
+                    time,
                     last_sn,
                     total_acknack_count,
                     avg_acknack_rate,
@@ -174,6 +179,7 @@ impl Logger {
                 };
 
                 let record = TopicRecord {
+                    time,
                     n_readers,
                     n_writers,
                 };
@@ -215,6 +221,8 @@ struct ParticipantRecord {}
 
 #[derive(Debug, Serialize)]
 struct WriterRecord {
+    #[serde(with = "chrono::serde::ts_microseconds")]
+    pub time: DateTime<Utc>,
     pub last_sn: Option<i64>,
     pub total_msg_count: usize,
     pub total_byte_count: usize,
@@ -225,6 +233,8 @@ struct WriterRecord {
 
 #[derive(Debug, Serialize)]
 struct ReaderRecord {
+    #[serde(with = "chrono::serde::ts_microseconds")]
+    pub time: DateTime<Utc>,
     pub last_sn: Option<i64>,
     pub total_acknack_count: usize,
     pub avg_acknack_rate: f64,
@@ -232,6 +242,8 @@ struct ReaderRecord {
 
 #[derive(Debug, Serialize)]
 struct TopicRecord {
+    #[serde(with = "chrono::serde::ts_microseconds")]
+    pub time: DateTime<Utc>,
     pub n_readers: usize,
     pub n_writers: usize,
 }
