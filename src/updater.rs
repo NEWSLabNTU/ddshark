@@ -510,12 +510,7 @@ impl Updater {
         }
     }
 
-    fn handle_acknack_event(
-        &self,
-        state: &mut State,
-        _msg: &RtpsSubmsgEvent,
-        event: &AckNackEvent,
-    ) {
+    fn handle_acknack_event(&self, state: &mut State, msg: &RtpsSubmsgEvent, event: &AckNackEvent) {
         // Update statistics
         state.stat.packet_count += 1;
         state.stat.acknack_submsg_count += 1;
@@ -531,7 +526,11 @@ impl Updater {
             .or_default();
 
         reader.total_acknack_count += 1;
-        // reader.acc_acknack_count += 1;
+
+        let result = reader.acknack_rate_stat.push(msg.recv_time, 1f64);
+        if result.is_err() {
+            todo!();
+        }
 
         // Save missing sequence numbers
         if let Some(acknack) = &reader.acknack {
