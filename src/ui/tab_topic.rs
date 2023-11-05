@@ -1,5 +1,8 @@
 use super::{value::Value, xtable::XTableState};
-use crate::{state::State, ui::xtable::XTable};
+use crate::{
+    state::{State, TopicState},
+    ui::xtable::XTable,
+};
 use ratatui::{prelude::*, widgets::StatefulWidget};
 
 pub struct TopicTable {
@@ -14,10 +17,40 @@ impl TopicTable {
         let rows: Vec<_> = topics
             .into_iter()
             .map(|(topic_name, topic)| {
+                let TopicState {
+                    total_msg_count,
+                    total_byte_count,
+                    ref msg_rate_stat,
+                    ref bit_rate_stat,
+                    total_acknack_count,
+                    ref acknack_rate_stat,
+                    ref readers,
+                    ref writers,
+                } = *topic;
+
                 let topic_name = topic_name.clone().into();
-                let n_readers = topic.readers.len().try_into().unwrap();
-                let n_writers = topic.writers.len().try_into().unwrap();
-                vec![topic_name, n_readers, n_writers]
+                let n_readers = readers.len().try_into().unwrap();
+                let n_writers = writers.len().try_into().unwrap();
+
+                let total_msg_count = total_msg_count.try_into().unwrap();
+                let total_byte_count = total_byte_count.try_into().unwrap();
+                let total_acknack_count = total_acknack_count.try_into().unwrap();
+
+                let avg_msgrate = msg_rate_stat.stat().mean.into();
+                let avg_bitrate = bit_rate_stat.stat().mean.into();
+                let avg_acknack_rate = acknack_rate_stat.stat().mean.into();
+
+                vec![
+                    topic_name,
+                    n_readers,
+                    n_writers,
+                    total_msg_count,
+                    avg_msgrate,
+                    total_byte_count,
+                    avg_bitrate,
+                    total_acknack_count,
+                    avg_acknack_rate,
+                ]
             })
             .collect();
 
@@ -32,8 +65,24 @@ impl StatefulWidget for TopicTable {
         const TITLE_NAME: &str = "name";
         const TITLE_NUM_READERS: &str = "# readers";
         const TITLE_NUM_WRITERS: &str = "# writers";
+        const TITLE_TOTAL_MSGS: &str = "msgs";
+        const TITLE_AVG_MSGRATE: &str = "msgrate";
+        const TITLE_TOTAL_BYTES: &str = "bytes";
+        const TITLE_AVG_BITRATE: &str = "bitrate";
+        const TITLE_TOTAL_ACKNACK: &str = "acks";
+        const TITLE_AVG_ACKNACK_RATE: &str = "ack_rate";
 
-        let header = vec![TITLE_NAME, TITLE_NUM_READERS, TITLE_NUM_WRITERS];
+        let header = vec![
+            TITLE_NAME,
+            TITLE_NUM_READERS,
+            TITLE_NUM_WRITERS,
+            TITLE_TOTAL_MSGS,
+            TITLE_AVG_MSGRATE,
+            TITLE_TOTAL_BYTES,
+            TITLE_AVG_BITRATE,
+            TITLE_TOTAL_ACKNACK,
+            TITLE_AVG_ACKNACK_RATE,
+        ];
 
         let table = XTable::new("Topics", &header, &self.rows);
         table.render(area, buf, &mut state.table_state);

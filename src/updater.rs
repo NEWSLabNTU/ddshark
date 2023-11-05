@@ -13,7 +13,7 @@ use crate::{
 use chrono::Local;
 use std::{
     sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 use tracing::{debug, error, warn};
 
@@ -154,42 +154,16 @@ impl Updater {
             }
         }
 
+        for topic in state.topics.values_mut() {
+            topic.msg_rate_stat.set_last_ts(ts);
+            topic.bit_rate_stat.set_last_ts(ts);
+            topic.acknack_rate_stat.set_last_ts(ts);
+        }
+
         self.logger.save(state).unwrap();
     }
 
     fn handle_data_event(&self, state: &mut State, msg: &RtpsSubmsgEvent, event: &DataEvent) {
-        state.stat.packet_count += 1;
-        state.stat.data_submsg_count += 1;
-
-        {
-            let participant = state
-                .participants
-                .entry(event.writer_guid.prefix)
-                .or_default();
-            let writer = participant
-                .writers
-                .entry(event.writer_guid.entity_id)
-                .or_default();
-
-            writer.last_sn = Some(event.writer_sn);
-
-            // Increase message count
-            writer.total_msg_count += 1;
-            let result = writer.msg_rate_stat.push(msg.recv_time, 1f64);
-            if result.is_err() {
-                todo!();
-            }
-
-            // Increase byte count
-            writer.total_byte_count += event.payload_size;
-            let result = writer
-                .bit_rate_stat
-                .push(msg.recv_time, (event.payload_size * 8) as f64);
-            if result.is_err() {
-                todo!();
-            }
-        }
-
         // println!(
         //     "{}\t{}\t{:.2}bps",
         //     event.writer_id.display(),
@@ -295,6 +269,58 @@ impl Updater {
                 DataPayload::Participant(_data) => {
                     debug!("DiscoveredParticipant not yet implemented");
                     // TODO
+                }
+            }
+        }
+
+        // Update general statistics
+        state.stat.packet_count += 1;
+        state.stat.data_submsg_count += 1;
+
+        {
+            let participant = state
+                .participants
+                .entry(event.writer_guid.prefix)
+                .or_default();
+            let writer = participant
+                .writers
+                .entry(event.writer_guid.entity_id)
+                .or_default();
+
+            writer.last_sn = Some(event.writer_sn);
+
+            // Increase message count
+            writer.total_msg_count += 1;
+            let result = writer.msg_rate_stat.push(msg.recv_time, 1f64);
+            if result.is_err() {
+                todo!();
+            }
+
+            // Increase byte count
+            writer.total_byte_count += event.payload_size;
+            let result = writer
+                .bit_rate_stat
+                .push(msg.recv_time, (event.payload_size * 8) as f64);
+            if result.is_err() {
+                todo!();
+            }
+
+            // Update the stat on associated topic.
+            if let Some(topic_name) = writer.topic_name() {
+                let topic = state.topics.get_mut(topic_name).unwrap();
+
+                topic.total_msg_count += 1;
+                let result = topic.msg_rate_stat.push(msg.recv_time, 1f64);
+                if result.is_err() {
+                    todo!();
+                }
+
+                topic.total_byte_count += event.payload_size;
+                let result = topic
+                    .bit_rate_stat
+                    .push(msg.recv_time, (event.payload_size * 8) as f64);
+                if result.is_err() {
+                    todo!();
                 }
             }
         }
@@ -424,7 +450,7 @@ impl Updater {
                     writer.frag_messages.remove(&event.writer_sn).unwrap();
                     writer.last_sn = Some(event.writer_sn);
 
-                    // Increase message count
+                    // Increase message count on writer stat
                     writer.total_msg_count += 1;
                     let result = writer.msg_rate_stat.push(msg.recv_time, 1.0);
                     if result.is_err() {
@@ -437,6 +463,25 @@ impl Updater {
                         .push(msg.recv_time, (event.payload_size * 8) as f64);
                     if result.is_err() {
                         todo!();
+                    }
+
+                    // Update stat on associated topic stat
+                    if let Some(topic_name) = writer.topic_name() {
+                        let topic = state.topics.get_mut(topic_name).unwrap();
+
+                        writer.total_msg_count += 1;
+                        let result = writer.msg_rate_stat.push(msg.recv_time, 1.0);
+                        if result.is_err() {
+                            todo!();
+                        }
+
+                        topic.total_byte_count += event.payload_size;
+                        let result = topic
+                            .bit_rate_stat
+                            .push(msg.recv_time, (event.payload_size * 8) as f64);
+                        if result.is_err() {
+                            todo!();
+                        }
                     }
                 }
             }
@@ -525,28 +570,43 @@ impl Updater {
             .entry(event.reader_guid.entity_id)
             .or_default();
 
+        // Update general stats.
         reader.total_acknack_count += 1;
 
+        // Update reader stat.
         let result = reader.acknack_rate_stat.push(msg.recv_time, 1f64);
         if result.is_err() {
             todo!();
         }
 
         // Save missing sequence numbers
-        if let Some(acknack) = &reader.acknack {
-            if acknack.count >= event.count {
-                return;
+        {
+            if let Some(acknack) = &reader.acknack {
+                if acknack.count >= event.count {
+                    return;
+                }
             }
-        }
 
-        reader.acknack = Some(AckNackState {
-            missing_sn: event.missing_sn.to_vec(),
-            count: event.count,
-            since: Instant::now(),
-        });
+            reader.acknack = Some(AckNackState {
+                missing_sn: event.missing_sn.to_vec(),
+                count: event.count,
+                since: Instant::now(),
+            });
+        }
 
         // Update last sn
         reader.last_sn = Some(event.base_sn);
+
+        // Update the stat on associated topic.
+        if let Some(topic_name) = reader.topic_name() {
+            let topic = state.topics.get_mut(topic_name).unwrap();
+
+            topic.total_acknack_count += 1;
+            let result = topic.acknack_rate_stat.push(msg.recv_time, 1f64);
+            if result.is_err() {
+                todo!();
+            }
+        }
     }
 
     fn handle_nackfrag_event(

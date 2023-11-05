@@ -166,7 +166,16 @@ impl Logger {
             }
 
             for (topic_name, topic_state) in &state.topics {
-                let TopicState { readers, writers } = topic_state;
+                let TopicState {
+                    ref readers,
+                    ref writers,
+                    total_msg_count,
+                    total_byte_count,
+                    ref msg_rate_stat,
+                    ref bit_rate_stat,
+                    total_acknack_count,
+                    ref acknack_rate_stat,
+                } = *topic_state;
                 let n_readers = readers.len();
                 let n_writers = writers.len();
 
@@ -183,10 +192,20 @@ impl Logger {
                     }
                 };
 
+                let avg_msgrate = msg_rate_stat.stat().mean;
+                let avg_bitrate = bit_rate_stat.stat().mean;
+                let avg_acknack_rate = acknack_rate_stat.stat().mean;
+
                 let record = TopicRecord {
                     time,
                     n_readers,
                     n_writers,
+                    total_msg_count,
+                    total_byte_count,
+                    total_acknack_count,
+                    avg_msgrate,
+                    avg_bitrate,
+                    avg_acknack_rate,
                 };
 
                 topic_logger.writer.serialize(record).unwrap();
@@ -251,6 +270,12 @@ struct TopicRecord {
     pub time: DateTime<Utc>,
     pub n_readers: usize,
     pub n_writers: usize,
+    pub total_msg_count: usize,
+    pub total_byte_count: usize,
+    pub total_acknack_count: usize,
+    pub avg_msgrate: f64,
+    pub avg_bitrate: f64,
+    pub avg_acknack_rate: f64,
 }
 
 fn create_writer<P>(path: P) -> io::Result<CsvWriter>

@@ -136,13 +136,27 @@ impl Default for ReaderState {
 
 #[derive(Debug)]
 pub struct TopicState {
+    pub total_msg_count: usize,
+    pub total_byte_count: usize,
+    pub msg_rate_stat: TimedStat,
+    pub bit_rate_stat: TimedStat,
+    pub total_acknack_count: usize,
+    pub acknack_rate_stat: TimedStat,
     pub readers: HashSet<GUID>,
     pub writers: HashSet<GUID>,
 }
 
 impl Default for TopicState {
     fn default() -> Self {
+        let window = chrono::Duration::from_std(TICK_INTERVAL).unwrap();
+
         Self {
+            total_msg_count: 0,
+            total_byte_count: 0,
+            msg_rate_stat: TimedStat::new(window),
+            bit_rate_stat: TimedStat::new(window),
+            total_acknack_count: 0,
+            acknack_rate_stat: TimedStat::new(window),
             readers: HashSet::new(),
             writers: HashSet::new(),
         }
