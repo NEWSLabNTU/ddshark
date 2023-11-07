@@ -208,8 +208,11 @@ impl XTableState {
         if self.num_entries > 0 {
             let orig_idx = self.table_state.selected().unwrap_or(0);
             let new_idx = orig_idx.saturating_sub(self.page_height);
+            let diff = orig_idx - new_idx;
+
             self.table_state.select(Some(new_idx));
-            *self.table_state.offset_mut() -= orig_idx - new_idx;
+            let offset = self.table_state.offset_mut();
+            *offset = offset.saturating_sub(diff);
         }
     }
 
