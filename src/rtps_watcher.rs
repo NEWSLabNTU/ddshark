@@ -1,13 +1,16 @@
-use super::{packet_decoder::RtpsPacket, PacketSource};
+use super::PacketSource;
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
         NackFragEvent, PacketHeaders, ParticipantInfo, RtpsSubmsgEvent, RtpsSubmsgEventKind,
         UpdateEvent,
     },
+    rtps::RtpsPacket,
     utils::EntityIdExt,
 };
 use anyhow::Result;
+use futures::TryStreamExt;
+use itertools::chain;
 use rustdds::{
     dds::{traits::serde_adapters::no_key::DeserializerAdapter, DiscoveredTopicData},
     discovery::data_types::{
@@ -38,11 +41,12 @@ use rustdds::{
     SequenceNumber, Timestamp, GUID,
 };
 use serde::Deserialize;
-use smoltcp::wire::{Ipv4Repr, UdpRepr};
+use smoltcp::wire::Ipv4Repr;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     net::SocketAddrV4,
+    time::Duration,
 };
 use tracing::{debug, error, warn};
 
@@ -57,11 +61,13 @@ struct Interpreter {
     recv_time: chrono::Duration,
 }
 
-pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Result<()> {
-    let iter = source.into_message_iter()?;
+const SEND_TIMEOUT: Duration = Duration::from_millis(100);
 
-    'msg_loop: for msg in iter {
-        let RtpsPacket { headers, message } = msg?;
+pub async fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Result<()> {
+    let mut stream = source.into_stream()?;
+
+    'msg_loop: while let Some(msg) = stream.try_next().await? {
+        let RtpsPacket { headers, message } = msg;
 
         let mut interpreter = {
             let Header {
@@ -96,7 +102,8 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
             }
         };
 
-        let event: UpdateEvent = ParticipantInfo {
+        // Generate a participant information event
+        let part_info_event: UpdateEvent = ParticipantInfo {
             recv_time: interpreter.recv_time,
             guid_prefix: interpreter.src_guid_prefix,
             unicast_locator_list: interpreter.unicast_locator_list.as_ref().unwrap().clone(),
@@ -104,22 +111,26 @@ pub fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Res
         }
         .into();
 
-        let mut events = vec![event];
-
-        let event_iter = message
+        // Generate submsg events
+        let submsg_events = message
             .submessages
             .iter()
             .flat_map(|submsg| handle_submsg(&mut interpreter, submsg));
-        events.extend(event_iter);
 
+        // Collect all generated events
+        let events: Vec<_> = chain!([part_info_event], submsg_events).collect();
+
+        // Send events to the updater
         for event in events {
-            use flume::TrySendError as E;
+            let send = tokio::time::timeout(SEND_TIMEOUT, tx.send_async(event));
 
-            match tx.try_send(event) {
-                Ok(()) => {}
-                Err(E::Disconnected(_)) => break 'msg_loop,
-                Err(E::Full(_)) => {
-                    warn!("channel is full");
+            match send.await {
+                Ok(Ok(())) => {}
+                Ok(Err(flume::SendError(_))) => {
+                    break 'msg_loop;
+                }
+                Err(_) => {
+                    warn!("congestion occurs");
                     continue;
                 }
             }

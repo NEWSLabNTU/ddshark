@@ -36,6 +36,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+use tokio_util::sync::CancellationToken;
 use tracing::error;
 
 const TAB_TITLES: &[&str] = &[
@@ -63,14 +64,20 @@ pub(crate) struct Tui {
     tick_dur: Duration,
     tab_index: usize,
     focus: Focus,
+    cancel_token: CancellationToken,
     state: Arc<Mutex<State>>,
 }
 
 impl Tui {
-    pub fn new(tick_dur: Duration, state: Arc<Mutex<State>>) -> Self {
+    pub fn new(
+        tick_dur: Duration,
+        cancel_token: CancellationToken,
+        state: Arc<Mutex<State>>,
+    ) -> Self {
         Self {
             tick_dur,
             state,
+            cancel_token,
             tab_index: 0,
             tab_participant: ParticipantTableState::new(),
             tab_writer: WriterTableState::new(),
@@ -94,6 +101,7 @@ impl Tui {
         self.run_loop(&mut terminal)?;
 
         // restore terminal
+        terminal.clear()?;
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
@@ -140,6 +148,8 @@ impl Tui {
     }
 
     fn process_events(&mut self, timeout: Duration) -> io::Result<ControlFlow<()>> {
+        assert!(!self.cancel_token.is_cancelled());
+
         if event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
                 use KeyCode as C;
@@ -148,7 +158,10 @@ impl Tui {
 
                 match key.code {
                     C::Char('q') => match self.focus {
-                        Focus::Dashboard => return Ok(ControlFlow::Break(())),
+                        Focus::Dashboard => {
+                            self.cancel_token.cancel();
+                            return Ok(ControlFlow::Break(()));
+                        }
                         Focus::Help => self.focus = Focus::Dashboard,
                     },
                     C::Char('h') => self.focus = Focus::Help,
@@ -209,6 +222,7 @@ impl Tui {
             error!("State lock is poisoned");
             return;
         };
+        // dbg!(state.participants.len());
 
         // Split the screen vertically into two chunks.
         let content_height = frame.size().height.saturating_sub(2);

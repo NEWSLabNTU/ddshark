@@ -1,7 +1,7 @@
 mod packet_decoder;
+mod packet_iter;
 mod packet_source;
-mod watcher;
+mod packet_stream;
 
-pub use packet_decoder::PacketDecoder;
+pub use packet_decoder::{PacketDecoder, RtpsPacket};
 pub use packet_source::PacketSource;
-pub use watcher::rtps_watcher;

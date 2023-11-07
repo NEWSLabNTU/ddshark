@@ -1,8 +1,11 @@
-use std::collections::VecDeque;
+use std::{
+    cmp::{Ordering, Reverse},
+    collections::{BinaryHeap, VecDeque},
+};
 
 #[derive(Debug, Clone)]
 pub struct TimedStat {
-    values: VecDeque<(chrono::Duration, f64)>,
+    values: BinaryHeap<Entry>,
     last_ts: Option<chrono::Duration>,
     stat: Stat,
     window: chrono::Duration,
@@ -14,7 +17,7 @@ impl TimedStat {
 
         Self {
             window,
-            values: VecDeque::new(),
+            values: BinaryHeap::new(),
             last_ts: None,
             stat: Stat::default(),
         }
@@ -28,12 +31,12 @@ impl TimedStat {
         let lower_ts = ts - self.window;
         let mut discarded = vec![];
 
-        while let Some(&(ts, value)) = self.values.front() {
+        while let Some(&Entry { time, value }) = self.values.peek() {
             if ts >= lower_ts {
                 break;
             }
 
-            self.values.pop_front();
+            self.values.pop();
             discarded.push((ts, value));
             stat.sum -= value;
             stat.sum_squares -= value.powi(2);
@@ -44,30 +47,21 @@ impl TimedStat {
         discarded
     }
 
-    pub fn push(
-        &mut self,
-        ts: chrono::Duration,
-        new_value: f64,
-    ) -> Result<Vec<(chrono::Duration, f64)>, chrono::Duration> {
+    pub fn push(&mut self, ts: chrono::Duration, new_value: f64) -> Vec<(chrono::Duration, f64)> {
         // Check if the timestamp succeeds the last timestamp
-        match self.last_ts {
-            Some(last_ts) if ts < last_ts => {
-                return Err(last_ts);
-            }
-            _ => {}
-        }
 
         self.last_ts = Some(ts);
-        self.values.push_back((ts, new_value));
+        self.values.push(Entry {
+            time: ts,
+            value: new_value,
+        });
 
         let stat = &mut self.stat;
         stat.sum += new_value;
         stat.sum_squares += new_value.powi(2);
 
         // Discard out-of-window values
-        let discarded = self.set_last_ts(ts);
-
-        Ok(discarded)
+        self.set_last_ts(ts)
     }
 
     pub fn stat(&self) -> &Stat {
@@ -103,5 +97,31 @@ impl Default for Stat {
             var: 0.0,
             stdev: 0.0,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Entry {
+    pub time: chrono::Duration,
+    pub value: f64,
+}
+
+impl PartialEq for Entry {
+    fn eq(&self, other: &Self) -> bool {
+        self.time == other.time
+    }
+}
+
+impl Eq for Entry {}
+
+impl PartialOrd for Entry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.time.partial_cmp(&other.time)?.reverse())
+    }
+}
+
+impl Ord for Entry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.time.cmp(&other.time).reverse()
     }
 }

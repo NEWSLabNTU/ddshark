@@ -10,23 +10,28 @@ use crate::{
     otlp,
     state::{Abnormality, AckNackState, FragmentedMessage, HeartbeatState, State},
 };
+use anyhow::Result;
 use chrono::Local;
 use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
+use tokio::{select, time::MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
     state: Arc<Mutex<State>>,
     otlp_handle: Option<otlp::TraceHandle>,
+    cancel_token: CancellationToken,
     logger: Logger,
 }
 
 impl Updater {
     pub(crate) fn new(
         rx: flume::Receiver<UpdateEvent>,
+        cancel_token: CancellationToken,
         state: Arc<Mutex<State>>,
         opt: &Opts,
     ) -> Self {
@@ -43,13 +48,24 @@ impl Updater {
             state,
             otlp_handle,
             logger,
+            cancel_token,
         }
     }
 
-    pub(crate) fn run(mut self) {
+    pub(crate) async fn run(mut self) -> Result<()> {
         // Wait for the first message
         let (first_instant, first_recv_time) = {
-            let Ok(message) = self.rx.recv() else { todo!() };
+            let message = select! {
+                _ = self.cancel_token.cancelled() => {
+                    return Ok(());
+                }
+                result = self.rx.recv_async() => {
+                    let Ok(msg) = result else {
+                        return Ok(());
+                    };
+                    msg
+                }
+            };
 
             let state = self.state.clone();
             let Ok(mut state) = state.lock() else {
@@ -71,24 +87,24 @@ impl Updater {
             (now, recv_time)
         };
 
-        let mut deadline = Instant::now() + TICK_INTERVAL;
+        let mut interval = tokio::time::interval(TICK_INTERVAL);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         loop {
-            use flume::RecvTimeoutError as E;
-
-            let message = match self.rx.recv_deadline(deadline) {
-                Ok(evt) => evt,
-                Err(E::Disconnected) => break,
-                Err(E::Timeout) => {
-                    deadline += TICK_INTERVAL;
-
-                    let now = Instant::now();
-                    while now >= deadline {
-                        deadline += TICK_INTERVAL;
-                    }
-
-                    let elapsed = now.duration_since(first_instant);
+            let message = select! {
+                _ = self.cancel_token.cancelled() => {
+                    return Ok(());
+                }
+                now = interval.tick() => {
+                    let elapsed = now.duration_since(first_instant.into());
                     let recv_time = first_recv_time + chrono::Duration::from_std(elapsed).unwrap();
                     TickEvent { recv_time }.into()
+                }
+                result = self.rx.recv_async() => {
+                    let Ok(message) = result else {
+                        break;
+                    };
+                    message
                 }
             };
 
@@ -100,6 +116,8 @@ impl Updater {
 
             self.handle_message(&mut state, &message);
         }
+
+        Ok(())
     }
 
     fn handle_message(&mut self, state: &mut State, message: &UpdateEvent) {
@@ -291,37 +309,25 @@ impl Updater {
 
             // Increase message count
             writer.total_msg_count += 1;
-            let result = writer.msg_rate_stat.push(msg.recv_time, 1f64);
-            if result.is_err() {
-                todo!();
-            }
+            writer.msg_rate_stat.push(msg.recv_time, 1f64);
 
             // Increase byte count
             writer.total_byte_count += event.payload_size;
-            let result = writer
+            writer
                 .bit_rate_stat
                 .push(msg.recv_time, (event.payload_size * 8) as f64);
-            if result.is_err() {
-                todo!();
-            }
 
             // Update the stat on associated topic.
             if let Some(topic_name) = writer.topic_name() {
                 let topic = state.topics.get_mut(topic_name).unwrap();
 
                 topic.total_msg_count += 1;
-                let result = topic.msg_rate_stat.push(msg.recv_time, 1f64);
-                if result.is_err() {
-                    todo!();
-                }
+                topic.msg_rate_stat.push(msg.recv_time, 1f64);
 
                 topic.total_byte_count += event.payload_size;
-                let result = topic
+                topic
                     .bit_rate_stat
                     .push(msg.recv_time, (event.payload_size * 8) as f64);
-                if result.is_err() {
-                    todo!();
-                }
             }
         }
     }
@@ -452,36 +458,24 @@ impl Updater {
 
                     // Increase message count on writer stat
                     writer.total_msg_count += 1;
-                    let result = writer.msg_rate_stat.push(msg.recv_time, 1.0);
-                    if result.is_err() {
-                        todo!();
-                    }
+                    writer.msg_rate_stat.push(msg.recv_time, 1.0);
 
                     writer.total_byte_count += event.payload_size;
-                    let result = writer
+                    writer
                         .bit_rate_stat
                         .push(msg.recv_time, (event.payload_size * 8) as f64);
-                    if result.is_err() {
-                        todo!();
-                    }
 
                     // Update stat on associated topic stat
                     if let Some(topic_name) = writer.topic_name() {
                         let topic = state.topics.get_mut(topic_name).unwrap();
 
                         writer.total_msg_count += 1;
-                        let result = writer.msg_rate_stat.push(msg.recv_time, 1.0);
-                        if result.is_err() {
-                            todo!();
-                        }
+                        writer.msg_rate_stat.push(msg.recv_time, 1.0);
 
                         topic.total_byte_count += event.payload_size;
-                        let result = topic
+                        topic
                             .bit_rate_stat
                             .push(msg.recv_time, (event.payload_size * 8) as f64);
-                        if result.is_err() {
-                            todo!();
-                        }
                     }
                 }
             }
@@ -574,10 +568,7 @@ impl Updater {
         reader.total_acknack_count += 1;
 
         // Update reader stat.
-        let result = reader.acknack_rate_stat.push(msg.recv_time, 1f64);
-        if result.is_err() {
-            todo!();
-        }
+        reader.acknack_rate_stat.push(msg.recv_time, 1f64);
 
         // Save missing sequence numbers
         {
@@ -602,10 +593,7 @@ impl Updater {
             let topic = state.topics.get_mut(topic_name).unwrap();
 
             topic.total_acknack_count += 1;
-            let result = topic.acknack_rate_stat.push(msg.recv_time, 1f64);
-            if result.is_err() {
-                todo!();
-            }
+            topic.acknack_rate_stat.push(msg.recv_time, 1f64);
         }
     }
 
