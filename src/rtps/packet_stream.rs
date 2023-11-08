@@ -1,8 +1,3 @@
-use std::{
-    task::Poll,
-    time::{Duration, Instant},
-};
-
 use super::{
     packet_decoder::{PacketDecoder, PacketKind, RtpsPacket},
     PacketSource,
@@ -13,6 +8,7 @@ use futures::{
     FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt,
 };
 use pcap::{Active, Capture, Device, Offline};
+use std::time::Instant;
 
 pub type RtpsPacketStream = BoxStream<'static, Result<RtpsPacket, pcap::Error>>;
 

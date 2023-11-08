@@ -67,58 +67,7 @@ pub async fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) 
     let mut stream = source.into_stream()?;
 
     'msg_loop: while let Some(msg) = stream.try_next().await? {
-        let RtpsPacket { headers, message } = msg;
-
-        let mut interpreter = {
-            let Header {
-                protocol_version,
-                vendor_id,
-                guid_prefix,
-                ..
-            } = message.header;
-            let PacketHeaders {
-                pcap_header,
-                eth_header,
-                vlan_header,
-                ipv4_header: Ipv4Repr { src_addr, .. },
-                // udp_header: UdpRepr { src_port, .. },
-                ts: recv_time,
-            } = headers;
-            let src_port = 0; // TODO: find correct UDP port
-            assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
-
-            // TODO: extract the UDP port
-            let unicast_locator = Locator::UdpV4(SocketAddrV4::new(src_addr.0.into(), src_port));
-
-            Interpreter {
-                src_version: protocol_version,
-                src_vendor_id: vendor_id,
-                src_guid_prefix: guid_prefix,
-                dst_guid_prefix: None,
-                timestamp: Timestamp::INVALID,
-                unicast_locator_list: Some(vec![unicast_locator]),
-                multicast_locator_list: None,
-                recv_time,
-            }
-        };
-
-        // Generate a participant information event
-        let part_info_event: UpdateEvent = ParticipantInfo {
-            recv_time: interpreter.recv_time,
-            guid_prefix: interpreter.src_guid_prefix,
-            unicast_locator_list: interpreter.unicast_locator_list.as_ref().unwrap().clone(),
-            multicast_locator_list: None,
-        }
-        .into();
-
-        // Generate submsg events
-        let submsg_events = message
-            .submessages
-            .iter()
-            .flat_map(|submsg| handle_submsg(&mut interpreter, submsg));
-
-        // Collect all generated events
-        let events: Vec<_> = chain!([part_info_event], submsg_events).collect();
+        let events = handle_msg(&msg);
 
         // Send events to the updater
         for event in events {

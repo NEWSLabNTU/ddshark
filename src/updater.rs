@@ -69,8 +69,7 @@ impl Updater {
 
             let state = self.state.clone();
             let Ok(mut state) = state.lock() else {
-                error!("INTERNAL ERROR Mutex poision error");
-                todo!();
+                panic!("INTERNAL ERROR Mutex poision error");
             };
 
             // Remember the difference b/w the current and receipt time.

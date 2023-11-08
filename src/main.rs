@@ -19,21 +19,22 @@ use futures::try_join;
 use rtps::PacketSource;
 use std::{
     future::Future,
+    io,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 use ui::Tui;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
 
-    // if no_tui {
-    //     tracing_subscriber::fmt().with_writer(io::stderr).init();
-    // }
+    // If TUI is disabled, show debug messages.
+    if opts.no_tui {
+        tracing_subscriber::fmt().with_writer(io::stderr).init();
+    }
 
     let state = Arc::new(Mutex::new(State::default()));
     let cancel_token = CancellationToken::new();

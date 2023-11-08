@@ -1,7 +1,4 @@
-use std::{
-    cmp::{Ordering, Reverse},
-    collections::{BinaryHeap, VecDeque},
-};
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 #[derive(Debug, Clone)]
 pub struct TimedStat {
