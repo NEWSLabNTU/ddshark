@@ -22,6 +22,7 @@ pub enum UpdateEvent {
     RtpsSubmsg(RtpsSubmsgEvent),
     ParticipantInfo(ParticipantInfo),
     Tick(TickEvent),
+    ToggleLogging,
 }
 
 impl From<TickEvent> for UpdateEvent {

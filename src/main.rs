@@ -15,11 +15,11 @@ mod utils;
 use crate::{opts::Opts, state::State};
 use anyhow::{bail, Result};
 use clap::Parser;
-use futures::try_join;
+use futures::future;
 use rtps::PacketSource;
 use std::{
     future::Future,
-    io,
+    io, mem,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -47,61 +47,55 @@ fn main() -> Result<()> {
         })?;
     }
 
+    let (tx, rx) = flume::bounded(64);
+
     let backend_handle = {
         let opts = opts.clone();
         let state = state.clone();
         let cancel_token = cancel_token.clone();
 
+        let rpts_watcher_task = {
+            let packet_src = match (&opts.file, &opts.interface) {
+                (Some(_), Some(_)) => {
+                    bail!("--file and --interface cannot be specified simultaneously")
+                }
+                (Some(file), None) => PacketSource::File { path: file.clone() },
+                (None, Some(interface)) => PacketSource::Interface(interface.clone()),
+                (None, None) => PacketSource::Default,
+            };
+
+            let watcher = rtps_watcher::rtps_watcher(packet_src, tx.clone(), cancel_token.clone());
+            spawn(cancel_token.clone(), watcher)
+        };
+
+        // Start state updater
+        let updater_task = {
+            let state = state.clone();
+
+            let updater = crate::updater::Updater::new(rx, cancel_token.clone(), state, &opts)?;
+            spawn(cancel_token.clone(), updater.run())
+        };
+
+        let future = future::try_join(rpts_watcher_task, updater_task);
+
         thread::spawn(move || -> Result<()> {
             let rt = Runtime::new()?;
-            rt.block_on(run_backend(&opts, cancel_token, state))
+            rt.block_on(future)?;
+            Ok(())
         })
     };
 
     // Run TUI
     if !opts.no_tui {
         let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
-        let tui = Tui::new(tick_dur, cancel_token, state);
+        let tui = Tui::new(tick_dur, tx, cancel_token, state);
         tui.run()?;
+    } else {
+        mem::drop(tx);
     }
 
     // Finalize
     backend_handle.join().unwrap()?;
-
-    Ok(())
-}
-
-async fn run_backend(
-    opts: &Opts,
-    cancel_token: CancellationToken,
-    state: Arc<Mutex<State>>,
-) -> Result<()> {
-    let (tx, rx) = flume::bounded(64);
-
-    let rpts_watcher_task = {
-        let packet_src = match (&opts.file, &opts.interface) {
-            (Some(_), Some(_)) => {
-                bail!("--file and --interface cannot be specified simultaneously")
-            }
-            (Some(file), None) => PacketSource::File { path: file.clone() },
-            (None, Some(interface)) => PacketSource::Interface(interface.clone()),
-            (None, None) => PacketSource::Default,
-        };
-
-        let watcher = rtps_watcher::rtps_watcher(packet_src, tx, cancel_token.clone());
-        spawn(cancel_token.clone(), watcher)
-    };
-
-    // Start state updater
-    let updater_task = {
-        let state = state.clone();
-        // let cancel_token = cancel_token.clone();
-
-        let updater = crate::updater::Updater::new(rx, cancel_token.clone(), state, &opts);
-        spawn(cancel_token.clone(), updater.run())
-    };
-
-    try_join!(rpts_watcher_task, updater_task)?;
 
     Ok(())
 }

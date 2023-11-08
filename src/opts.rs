@@ -26,4 +26,8 @@ pub struct Opts {
     /// Disable text user interface.
     #[clap(long)]
     pub no_tui: bool,
+
+    /// Start logging when the program starts.
+    #[clap(long)]
+    pub log_on_start: bool,
 }

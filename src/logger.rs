@@ -214,6 +214,24 @@ impl Logger {
 
         Ok(())
     }
+
+    pub fn close(self) -> io::Result<()> {
+        for (_, part) in self.participants {
+            for (_, mut writer) in part.writers {
+                writer.writer.flush()?;
+            }
+
+            for (_, mut reader) in part.readers {
+                reader.writer.flush()?;
+            }
+        }
+
+        for (_, mut topic) in self.topics {
+            topic.writer.flush()?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]

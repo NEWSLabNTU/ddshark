@@ -15,12 +15,13 @@ use self::{
     tab_topic::{TopicTable, TopicTableState},
     tab_writer::{WriterTable, WriterTableState},
 };
-use crate::state::State;
+use crate::{message::UpdateEvent, state::State};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use flume::SendTimeoutError;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
@@ -37,7 +38,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{error, warn};
 
 const TAB_TITLES: &[&str] = &[
     "Participants",
@@ -65,16 +66,19 @@ pub(crate) struct Tui {
     tab_index: usize,
     focus: Focus,
     cancel_token: CancellationToken,
+    tx: flume::Sender<UpdateEvent>,
     state: Arc<Mutex<State>>,
 }
 
 impl Tui {
     pub fn new(
         tick_dur: Duration,
+        tx: flume::Sender<UpdateEvent>,
         cancel_token: CancellationToken,
         state: Arc<Mutex<State>>,
     ) -> Self {
         Self {
+            tx,
             tick_dur,
             state,
             cancel_token,
@@ -171,7 +175,11 @@ impl Tui {
                     C::Char('v') => {
                         self.toggle_show();
                     }
-                    // C::Char('r') => self.logging = !self.logging,
+                    C::Char('r') => {
+                        if let ControlFlow::Break(()) = self.toggle_logging() {
+                            return Ok(ControlFlow::Break(()));
+                        }
+                    }
                     C::Up => {
                         self.key_up();
                     }
@@ -318,7 +326,7 @@ PageDown  Next page
 h         Show help
 s         Sort by selected column
 v         Hide/Show column
-a         Close dialog or exit
+r         Enable/Disable data logging
 q         Close dialog or exit
 ",
             env!("CARGO_PKG_VERSION")
@@ -452,6 +460,22 @@ q         Close dialog or exit
             TAB_IDX_STATISTICS => self.tab_stat.toggle_sort(),
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.toggle_sort(),
             _ => unreachable!(),
+        }
+    }
+
+    fn toggle_logging(&self) -> ControlFlow<()> {
+        let timeout = Duration::from_millis(100);
+        let result = self.tx.send_timeout(UpdateEvent::ToggleLogging, timeout);
+
+        type E<T> = SendTimeoutError<T>;
+
+        match result {
+            Ok(()) => ControlFlow::Continue(()),
+            Err(E::Disconnected(_)) => ControlFlow::Break(()),
+            Err(E::Timeout(_)) => {
+                warn!("congestion occurs");
+                ControlFlow::Continue(())
+            }
         }
     }
 }

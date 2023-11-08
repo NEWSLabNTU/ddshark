@@ -25,7 +25,7 @@ pub struct Updater {
     state: Arc<Mutex<State>>,
     otlp_handle: Option<otlp::TraceHandle>,
     cancel_token: CancellationToken,
-    logger: Logger,
+    logger: Option<Logger>,
 }
 
 impl Updater {
@@ -33,28 +33,32 @@ impl Updater {
         rx: flume::Receiver<UpdateEvent>,
         cancel_token: CancellationToken,
         state: Arc<Mutex<State>>,
-        opt: &Opts,
-    ) -> Self {
+        opts: &Opts,
+    ) -> Result<Self> {
         // Enable OTLP if `otlp_enable` is true.
-        let otlp_handle = match opt.otlp {
-            true => Some(otlp::TraceHandle::new(opt)),
+        let otlp_handle = match opts.otlp {
+            true => Some(otlp::TraceHandle::new(opts)),
             false => None,
         };
 
-        let logger = Logger::new().unwrap();
+        let logger = if opts.log_on_start {
+            Some(Logger::new()?)
+        } else {
+            None
+        };
 
-        Self {
+        Ok(Self {
             rx,
             state,
             otlp_handle,
             logger,
             cancel_token,
-        }
+        })
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
         // Wait for the first message
-        let (first_instant, first_recv_time) = {
+        let (first_instant, first_recv_time) = loop {
             let message = select! {
                 _ = self.cancel_token.cancelled() => {
                     return Ok(());
@@ -79,16 +83,21 @@ impl Updater {
                 UpdateEvent::RtpsSubmsg(msg) => msg.recv_time,
                 UpdateEvent::ParticipantInfo(msg) => msg.recv_time,
                 UpdateEvent::Tick(_) => unreachable!(),
+                UpdateEvent::ToggleLogging => {
+                    self.toggle_logging()?;
+                    continue;
+                }
             };
 
-            self.handle_message(&mut state, &message);
+            self.handle_message(&mut state, &message)?;
 
-            (now, recv_time)
+            break (now, recv_time);
         };
 
         let mut interval = tokio::time::interval(TICK_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+        // Loop to process input messages
         loop {
             let message = select! {
                 _ = self.cancel_token.cancelled() => {
@@ -113,16 +122,21 @@ impl Updater {
                 break;
             };
 
-            self.handle_message(&mut state, &message);
+            self.handle_message(&mut state, &message)?;
+        }
+
+        // Turn off logging
+        if let Some(logger) = self.logger.take() {
+            logger.close()?;
         }
 
         Ok(())
     }
 
-    fn handle_message(&mut self, state: &mut State, message: &UpdateEvent) {
+    fn handle_message(&mut self, state: &mut State, message: &UpdateEvent) -> Result<()> {
         match message {
             UpdateEvent::Tick(msg) => {
-                self.handle_tick(state, msg);
+                self.handle_tick(state, msg)?;
             }
             UpdateEvent::RtpsMsg(_) => todo!(),
             UpdateEvent::ParticipantInfo(info) => {
@@ -151,10 +165,13 @@ impl Updater {
                     self.handle_heartbeatfrag_event(state, msg, event);
                 }
             },
+            UpdateEvent::ToggleLogging => self.toggle_logging()?,
         }
+
+        Ok(())
     }
 
-    fn handle_tick(&mut self, state: &mut State, msg: &TickEvent) {
+    fn handle_tick(&mut self, state: &mut State, msg: &TickEvent) -> Result<()> {
         state.tick_since = msg.when;
 
         let ts = msg.recv_time;
@@ -176,7 +193,11 @@ impl Updater {
             topic.acknack_rate_stat.set_last_ts(ts);
         }
 
-        self.logger.save(state).unwrap();
+        if let Some(logger) = &mut self.logger {
+            logger.save(state)?;
+        }
+
+        Ok(())
     }
 
     fn handle_data_event(&self, state: &mut State, msg: &RtpsSubmsgEvent, event: &DataEvent) {
@@ -626,5 +647,15 @@ impl Updater {
         let participant = state.participants.entry(guid_prefix).or_default();
         participant.unicast_locator_list = Some(unicast_locator_list.clone());
         participant.multicast_locator_list = multicast_locator_list.clone();
+    }
+
+    fn toggle_logging(&mut self) -> Result<()> {
+        if let Some(logger) = self.logger.take() {
+            logger.close()?;
+        } else {
+            self.logger = Some(Logger::new()?);
+        }
+
+        Ok(())
     }
 }
