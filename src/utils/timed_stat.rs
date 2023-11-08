@@ -23,15 +23,15 @@ impl TimedStat {
         }
     }
 
-    pub fn set_last_ts(&mut self, ts: chrono::Duration) -> Vec<(chrono::Duration, f64)> {
-        self.last_ts = Some(ts);
+    pub fn set_last_ts(&mut self, last_ts: chrono::Duration) -> Vec<(chrono::Duration, f64)> {
+        self.last_ts = Some(last_ts);
         let stat = &mut self.stat;
 
         // Discard out-of-window values
-        let lower_ts = ts - self.window;
+        let lower_ts = last_ts - self.window;
         let mut discarded = vec![];
 
-        while let Some(&Entry { time, value }) = self.values.peek() {
+        while let Some(&Entry { time: ts, value }) = self.values.peek() {
             if ts >= lower_ts {
                 break;
             }
@@ -116,7 +116,7 @@ impl Eq for Entry {}
 
 impl PartialOrd for Entry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.time.partial_cmp(&other.time)?.reverse())
+        Some(self.time.cmp(&other.time).reverse())
     }
 }
 
