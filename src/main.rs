@@ -38,6 +38,14 @@ fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(State::default()));
     let cancel_token = CancellationToken::new();
 
+    // Set Ctrl-C handler
+    {
+        let cancel_token = cancel_token.clone();
+        ctrlc::set_handler(move || {
+            cancel_token.cancel();
+        })?;
+    }
+
     let backend_handle = {
         let opts = opts.clone();
         let state = state.clone();

@@ -119,7 +119,7 @@ impl Tui {
     {
         let mut last_tick = Instant::now();
 
-        loop {
+        while !self.cancel_token.is_cancelled() {
             // Wait for key event
             {
                 let timeout = self
