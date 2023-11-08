@@ -9,7 +9,7 @@ use crate::{
     utils::EntityIdExt,
 };
 use anyhow::Result;
-use futures::TryStreamExt;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::chain;
 use rustdds::{
     dds::{traits::serde_adapters::no_key::DeserializerAdapter, DiscoveredTopicData},
@@ -48,6 +48,7 @@ use std::{
     net::SocketAddrV4,
     time::Duration,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
 
 struct Interpreter {
@@ -63,10 +64,22 @@ struct Interpreter {
 
 const SEND_TIMEOUT: Duration = Duration::from_millis(100);
 
-pub async fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) -> Result<()> {
-    let mut stream = source.into_stream()?;
+pub async fn rtps_watcher(
+    source: PacketSource,
+    tx: flume::Sender<UpdateEvent>,
+    cancel_token: CancellationToken,
+) -> Result<()> {
+    let stream = source.into_stream()?;
 
-    'msg_loop: while let Some(msg) = stream.try_next().await? {
+    // Keep waiting when the packet stream is depleted. This prevents
+    // immediate exit when the stream reaches to the end of .pcap
+    // file.
+    let stream = stream.chain(stream::pending());
+
+    // The stream runs until the cancel_token is signaled.
+    let mut stream = stream.take_until(cancel_token.cancelled()).boxed();
+
+    while let Some(msg) = stream.try_next().await? {
         let events = handle_msg(&msg);
 
         // Send events to the updater
@@ -75,9 +88,7 @@ pub async fn rtps_watcher(source: PacketSource, tx: flume::Sender<UpdateEvent>) 
 
             match send.await {
                 Ok(Ok(())) => {}
-                Ok(Err(flume::SendError(_))) => {
-                    break 'msg_loop;
-                }
+                Ok(Err(flume::SendError(_))) => return Ok(()),
                 Err(_) => {
                     warn!("congestion occurs");
                     continue;

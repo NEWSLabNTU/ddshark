@@ -88,7 +88,7 @@ async fn run_backend(
             (None, None) => PacketSource::Default,
         };
 
-        let watcher = rtps_watcher::rtps_watcher(packet_src, tx);
+        let watcher = rtps_watcher::rtps_watcher(packet_src, tx, cancel_token.clone());
         spawn(cancel_token.clone(), watcher)
     };
 
