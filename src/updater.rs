@@ -98,7 +98,7 @@ impl Updater {
                 now = interval.tick() => {
                     let elapsed = now.duration_since(first_instant.into());
                     let recv_time = first_recv_time + chrono::Duration::from_std(elapsed).unwrap();
-                    TickEvent { recv_time }.into()
+                    TickEvent {recv_time, when: now.into() }.into()
                 }
                 result = self.rx.recv_async() => {
                     let Ok(message) = result else {
@@ -156,8 +156,7 @@ impl Updater {
     }
 
     fn handle_tick(&mut self, state: &mut State, msg: &TickEvent) {
-        let now = Instant::now();
-        state.tick_since = now;
+        state.tick_since = msg.when;
 
         let ts = msg.recv_time;
 

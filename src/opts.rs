@@ -26,9 +26,4 @@ pub struct Opts {
     /// Disable text user interface.
     #[clap(long)]
     pub no_tui: bool,
-
-    /// Do not respect the timestamps in the packet dump.This option
-    /// is effective only when --file is used.
-    #[clap(long)]
-    pub fast_replay: bool,
 }

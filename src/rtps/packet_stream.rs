@@ -1,4 +1,7 @@
-use std::{task::Poll, time::Instant};
+use std::{
+    task::Poll,
+    time::{Duration, Instant},
+};
 
 use super::{
     packet_decoder::{PacketDecoder, PacketKind, RtpsPacket},
@@ -7,9 +10,8 @@ use super::{
 use anyhow::{anyhow, Result};
 use futures::{
     stream::{self, BoxStream},
-    Stream, StreamExt, TryStreamExt,
+    FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt,
 };
-use itertools::Itertools;
 use pcap::{Active, Capture, Device, Offline};
 
 pub type RtpsPacketStream = BoxStream<'static, Result<RtpsPacket, pcap::Error>>;
@@ -22,7 +24,7 @@ pub fn build_packet_stream(src: PacketSource) -> Result<RtpsPacketStream> {
                 .open()?;
             build_active_packet_stream(cap)?.boxed()
         }
-        PacketSource::File { path, sync_time } => {
+        PacketSource::File { path } => {
             let cap = Capture::from_file(path)?;
             build_offline_packet_stream(cap)?.boxed()
         }
@@ -58,23 +60,46 @@ fn build_active_packet_stream(
 fn build_offline_packet_stream(
     cap: Capture<Offline>,
 ) -> Result<impl Stream<Item = Result<RtpsPacket, pcap::Error>> + Send + 'static> {
-    // let iter = cap
-    //     .iter(PacketDecoder::new())
-    //     .map_ok(|pkt| {
-    //         let PacketKind::Rtps(pkt) = pkt else {
-    //             return None;
-    //         };
-    //         Some(pkt)
-    //     })
-    //     .flatten_ok();
-    // let stream = futures::stream::iter(iter);
-
     let iter = cap.iter(PacketDecoder::new());
-    let stream = stream::iter(iter).try_filter_map(|pkt| async move {
-        let PacketKind::Rtps(pkt) = pkt else {
+    let mut stream = stream::iter(iter);
+
+    let stream = async move {
+        let Some(first_packet) = stream.try_next().await? else {
             return Ok(None);
         };
-        Ok(Some(pkt))
+
+        let since_instant = Instant::now();
+        let since_ts = first_packet.ts();
+
+        let rest = stream.and_then(move |packet| async move {
+            // Simulate the receipt rate
+            let now = Instant::now();
+            let ts = packet.ts();
+
+            let diff = (ts - since_ts).to_std().unwrap();
+            let until = since_instant + diff;
+
+            if let Some(wait) = until.checked_duration_since(now) {
+                tokio::time::sleep(wait).await;
+            }
+
+            Ok(packet)
+        });
+
+        let stream = stream::iter([Ok(first_packet)]).chain(rest);
+
+        Result::<_, pcap::Error>::Ok(Some(stream))
+    }
+    .map_ok(|stream| stream::iter(stream).flatten())
+    .into_stream()
+    .try_flatten()
+    .try_filter_map(|packet| async move {
+        // Get the RTPS packet
+        let PacketKind::Rtps(packet) = packet else {
+            return Ok(None);
+        };
+
+        Ok(Some(packet))
     });
 
     Ok(stream)

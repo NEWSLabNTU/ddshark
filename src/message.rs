@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use etherparse::{Ethernet2Header, SingleVlanHeader};
 use rustdds::{
     dds::DiscoveredTopicData,
@@ -42,6 +44,7 @@ impl From<RtpsSubmsgEvent> for UpdateEvent {
 
 #[derive(Debug, Clone)]
 pub struct TickEvent {
+    pub when: Instant,
     pub recv_time: chrono::Duration,
 }
 

@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub enum PacketSource {
     Default,
-    File { path: PathBuf, sync_time: bool },
+    File { path: PathBuf },
     Interface(String),
 }
 
@@ -23,9 +23,9 @@ impl PacketSource {
                     .open()?;
                 MessageIter::new_active(cap)
             }
-            PacketSource::File { path, sync_time } => {
+            PacketSource::File { path } => {
                 let cap = Capture::from_file(path)?;
-                MessageIter::new_offline(cap, sync_time)
+                MessageIter::new_offline(cap)
             }
             PacketSource::Interface(interface) => {
                 let cap = Device::list()?

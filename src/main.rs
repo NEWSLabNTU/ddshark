@@ -13,17 +13,14 @@ mod utils;
 // mod dds;
 
 use crate::{opts::Opts, state::State};
-use anyhow::anyhow;
 use anyhow::{bail, Result};
 use clap::Parser;
-use futures::{join, try_join};
+use futures::try_join;
 use rtps::PacketSource;
-use rtps_watcher::rtps_watcher;
-use std::future::Future;
-use std::thread;
 use std::{
-    io,
+    future::Future,
     sync::{Arc, Mutex},
+    thread,
     time::Duration,
 };
 use tokio::runtime::Runtime;
@@ -33,12 +30,6 @@ use ui::Tui;
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
-    // let Opts {
-    //     refresh_rate,
-    //     no_tui,
-    //     fast_replay,
-    //     ..
-    // } = opts;
 
     // if no_tui {
     //     tracing_subscriber::fmt().with_writer(io::stderr).init();
@@ -83,16 +74,8 @@ async fn run_backend(
             (Some(_), Some(_)) => {
                 bail!("--file and --interface cannot be specified simultaneously")
             }
-            (Some(file), None) => PacketSource::File {
-                path: file.clone(),
-                sync_time: !opts.fast_replay,
-            },
-            (None, Some(interface)) => {
-                if opts.fast_replay {
-                    warn!("--fast-replay has no effect in conjunction with --interface");
-                }
-                PacketSource::Interface(interface.clone())
-            }
+            (Some(file), None) => PacketSource::File { path: file.clone() },
+            (None, Some(interface)) => PacketSource::Interface(interface.clone()),
             (None, None) => PacketSource::Default,
         };
 

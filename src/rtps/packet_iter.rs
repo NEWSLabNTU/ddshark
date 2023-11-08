@@ -13,10 +13,9 @@ impl MessageIter {
         MessageIter::from(capture.iter(PacketDecoder::new()))
     }
 
-    pub fn new_offline(capture: Capture<Offline>, sync_time: bool) -> Self {
+    pub fn new_offline(capture: Capture<Offline>) -> Self {
         OfflineMessageIter {
             packet_iter: capture.iter(PacketDecoder::new()),
-            sync_time,
             since: None,
         }
         .into()
@@ -56,7 +55,6 @@ impl From<PacketIter<pcap::Active, PacketDecoder>> for MessageIter {
 pub struct OfflineMessageIter {
     since: Option<(Instant, chrono::Duration)>,
     packet_iter: PacketIter<pcap::Offline, PacketDecoder>,
-    sync_time: bool,
 }
 
 impl Iterator for OfflineMessageIter {
@@ -70,15 +68,16 @@ impl Iterator for OfflineMessageIter {
                 Err(err) => break Some(Err(err)),
             };
 
-            if self.sync_time {
+            // Simulate the receipt rate
+            {
+                let now = Instant::now();
                 let ts = packet.ts();
-                let (since_instant, since_ts) =
-                    *self.since.get_or_insert_with(|| (Instant::now(), ts));
+                let (since_instant, since_ts) = *self.since.get_or_insert((now, ts));
 
                 let diff = (ts - since_ts).to_std().unwrap();
                 let until = since_instant + diff;
 
-                if let Some(wait) = until.checked_duration_since(Instant::now()) {
+                if let Some(wait) = until.checked_duration_since(now) {
                     thread::sleep(wait);
                 }
             }
