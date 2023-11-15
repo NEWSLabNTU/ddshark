@@ -5,13 +5,14 @@ use super::PacketSource;
 use crate::{
     message::{
         AckNackEvent, DataEvent, DataFragEvent, GapEvent, HeartbeatEvent, HeartbeatFragEvent,
-        NackFragEvent, PacketHeaders, ParticipantInfo, RtpsSubmsgEvent, RtpsSubmsgEventKind,
+        NackFragEvent, ParticipantInfo, RtpsPacketHeaders, RtpsSubmsgEvent, RtpsSubmsgEventKind,
         UpdateEvent,
     },
     rtps::RtpsPacket,
     utils::EntityIdExt,
 };
 use anyhow::Result;
+use etherparse::{Ipv4Header, UdpHeader};
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::chain;
 use rustdds::{
@@ -44,7 +45,6 @@ use rustdds::{
     SequenceNumber, Timestamp, GUID,
 };
 use serde::Deserialize;
-use smoltcp::wire::Ipv4Repr;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
@@ -115,19 +115,15 @@ fn handle_msg(msg: &RtpsPacket) -> Vec<UpdateEvent> {
             guid_prefix,
             ..
         } = message.header;
-        let PacketHeaders {
-            ref pcap_header,
-            ref eth_header,
-            ref vlan_header,
-            ipv4_header: Ipv4Repr { src_addr, .. },
-            // udp_header: UdpRepr { src_port, .. },
+        let RtpsPacketHeaders {
+            ipv4: Ipv4Header { source, .. },
+            udp: UdpHeader { source_port, .. },
             ts: recv_time,
+            ..
         } = *headers;
-        let src_port = 0; // TODO: find correct UDP port
         assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
 
-        // TODO: extract the UDP port
-        let unicast_locator = Locator::UdpV4(SocketAddrV4::new(src_addr.0.into(), src_port));
+        let unicast_locator = Locator::UdpV4(SocketAddrV4::new(source.into(), source_port));
 
         Interpreter {
             src_version: protocol_version,

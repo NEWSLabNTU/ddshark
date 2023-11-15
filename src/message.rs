@@ -1,6 +1,6 @@
 //! Messages exchanged within the program.
 
-use etherparse::{Ethernet2Header, SingleVlanHeader};
+use etherparse::{Ethernet2Header, Ipv4Header, UdpHeader, VlanHeader};
 use rustdds::{
     dds::DiscoveredTopicData,
     discovery::data_types::{
@@ -14,7 +14,6 @@ use rustdds::{
     },
     SequenceNumber, Timestamp, GUID,
 };
-use smoltcp::wire::Ipv4Repr;
 use std::time::Instant;
 
 /// The message that is sent to the updater.
@@ -117,17 +116,17 @@ impl From<AckNackEvent> for RtpsSubmsgEventKind {
 /// The event records the receipt of a RTPS packet.
 #[derive(Debug, Clone)]
 pub struct RtpsMsgEvent {
-    pub headers: PacketHeaders,
+    pub headers: RtpsPacketHeaders,
 }
 
 /// The dissected headers from a RTPS packet.
 #[derive(Debug, Clone)]
-pub struct PacketHeaders {
+pub struct RtpsPacketHeaders {
     pub pcap_header: pcap::PacketHeader,
-    pub eth_header: Ethernet2Header,
-    pub vlan_header: Option<SingleVlanHeader>,
-    pub ipv4_header: Ipv4Repr,
-    // pub udp_header: UdpRepr,
+    pub link: Option<Ethernet2Header>,
+    pub vlan: Option<VlanHeader>,
+    pub ipv4: Ipv4Header,
+    pub udp: UdpHeader,
     pub ts: chrono::Duration,
 }
 

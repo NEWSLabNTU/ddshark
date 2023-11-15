@@ -1,15 +1,14 @@
-use crate::message::PacketHeaders;
-use anyhow::Result;
+use crate::message::RtpsPacketHeaders;
+use anyhow::bail;
 use bytes::Bytes;
-use etherparse::{EtherType, Ethernet2Header, SingleVlanHeader};
+use etherparse::{
+    Ethernet2Header, IpHeader, Ipv4Header, PacketHeaders, TransportHeader, UdpHeader, VlanHeader,
+};
 use libc::timeval;
 use pcap::{PacketCodec, PacketHeader};
 use rustdds::serialization::Message;
-use smoltcp::{
-    phy::ChecksumCapabilities,
-    wire::{Ipv4Packet, Ipv4Repr, UdpPacket, UdpRepr},
-};
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap},
     net::Ipv4Addr,
 };
@@ -30,173 +29,119 @@ impl PacketDecoder {
         }
     }
 
-    /// Process a packet and dissect its ethernet header, and optionaly VLAN header.
-    pub fn dissect_eth_header<'a>(
-        packet: &'a pcap::Packet,
-    ) -> Result<(Ethernet2Header, Option<SingleVlanHeader>, &'a [u8]), &'static str> {
-        let (eth_header, data) =
-            Ethernet2Header::from_slice(packet).map_err(|_| "Failed to parse Ethernet header")?;
+    fn dissect_packet<'a>(&mut self, packet: &'a pcap::Packet) -> Dissection<'a> {
+        let Ok(headers) = PacketHeaders::from_ethernet_slice(packet) else {
+            return Dissection::NotSupported;
+        };
+        let PacketHeaders {
+            link,
+            vlan,
+            ip,
+            transport,
+            payload,
+        } = headers;
 
-        match EtherType::from_u16(eth_header.ether_type) {
-            Some(EtherType::VlanTaggedFrame) => {
-                let (vlan_header, remaining_data) = SingleVlanHeader::from_slice(data)
-                    .map_err(|_| "Failed to parse VLAN header")?;
-                Ok((eth_header, Some(vlan_header), remaining_data))
-            }
-            Some(EtherType::Ipv4) => Ok((eth_header, None, data)),
-            _ => Err("Unsupported EtherType"),
-        }
-    }
+        let Some(IpHeader::Version4(ipv4, _)) = ip else {
+            return Dissection::NotSupported;
+        };
 
-    /// Check if the packet is a fragment and return true if it is
-    pub fn is_fragment(packet_data: &[u8]) -> Result<bool, &'static str> {
-        let ip_packet = Ipv4Packet::new_checked(packet_data)
-            .map_err(|_| "Failed to parse IPv4 packet header")?;
+        let is_fragment = ipv4.more_fragments || ipv4.fragments_offset != 0;
 
-        if ip_packet.more_frags() || ip_packet.frag_offset() != 0 {
-            Ok(true)
+        let (udp, defrag_payload) = if is_fragment {
+            let payload = match self.process_fragments(&ipv4, payload) {
+                Some(payload) => payload,
+                None => {
+                    return Dissection::Ipv4Fragment { link, vlan, ipv4 };
+                }
+            };
+            let Ok((udp, payload)) = UdpHeader::from_slice(&payload) else {
+                return Dissection::NotSupported;
+            };
+            (udp, Cow::Owned(payload.to_vec()))
         } else {
-            Ok(false)
+            let Some(TransportHeader::Udp(udp)) = transport else {
+                return Dissection::NotSupported;
+            };
+            (udp, Cow::Borrowed(payload))
+        };
+
+        MaybeAssembledUdpPacket {
+            link,
+            vlan,
+            ipv4,
+            udp,
+            payload: defrag_payload,
         }
-    }
-
-    /// Process a packet and dissect its IP header.
-    /// Returns the IP header and the payload
-    pub fn dissect_ip_header(packet_data: &[u8]) -> Result<(Ipv4Repr, &[u8]), &'static str> {
-        let checksum_caps = ChecksumCapabilities::default();
-
-        let ip_packet = Ipv4Packet::new_checked(packet_data)
-            .map_err(|_| "Failed to parse IPv4 packet header")?;
-        let ip_repr = Ipv4Repr::parse(&ip_packet, &checksum_caps)
-            .map_err(|_| "Failed to parse IPv4 packet header")?;
-
-        let payload = &packet_data[ip_packet.header_len() as usize..];
-
-        Ok((ip_repr, payload))
-    }
-
-    /// Process a packet and dissect its UDP header.
-    /// Returns the UDP header and the payload
-    pub fn dissect_udp_header(
-        ip_repr: Ipv4Repr,
-        packet_data: &[u8],
-    ) -> Result<(UdpRepr, &[u8]), &'static str> {
-        let checksum_caps = ChecksumCapabilities::default();
-        let udp_packet = UdpPacket::new_checked(packet_data)
-            .map_err(|_| "Failed to parse IPv4 packet header")?;
-        let udp_repr = UdpRepr::parse(
-            &udp_packet,
-            &ip_repr.src_addr.into(),
-            &ip_repr.dst_addr.into(),
-            &checksum_caps,
-        )
-        .map_err(|_| "Failed to parse IPv4 packet header")?;
-
-        let payload = &packet_data[udp_repr.header_len()..];
-
-        Ok((udp_repr, payload))
+        .into()
     }
 
     /// Process packet fragments and return the payload if it is complete.
     /// Returns None if not all fragments have been received
-    pub fn process_fragments(
-        &mut self,
-        packet_data: &[u8],
-    ) -> Result<(Ipv4Repr, Option<Vec<u8>>), &'static str> {
-        let checksum_caps = ChecksumCapabilities::default();
+    fn process_fragments(&mut self, ipv4: &Ipv4Header, payload: &[u8]) -> Option<Vec<u8>> {
+        let src = ipv4.source.into();
+        let dst = ipv4.destination.into();
+        let ident = ipv4.identification;
 
-        let ip_packet = Ipv4Packet::new_checked(packet_data)
-            .map_err(|_| "Failed to parse IPv4 packet header")?;
-        let ip_repr = Ipv4Repr::parse(&ip_packet, &checksum_caps)
-            .map_err(|_| "Failed to parse IPv4 packet header")?;
+        // Store the fragment into the buffer
+        let fragment_buffer = self.fragments.entry((src, dst, ident)).or_default();
+        fragment_buffer.insert(ipv4.fragments_offset, payload.to_vec());
 
-        if ip_packet.more_frags() || ip_packet.frag_offset() != 0 {
-            let src = ip_repr.src_addr.into();
-            let dst = ip_repr.dst_addr.into();
-            let ident = ip_packet.ident();
+        // Update the assembler
+        let (received_length, total_length) =
+            self.assemblers.entry((src, dst, ident)).or_insert((0, 0));
+        let fragment_len = payload.len();
+        *received_length += fragment_len;
 
-            // Store the fragment into the buffer
-            let fragment_data = &packet_data[ip_packet.header_len() as usize..];
-            let fragment_buffer = self.fragments.entry((src, dst, ident)).or_default();
-            fragment_buffer.insert(ip_packet.frag_offset(), fragment_data.to_vec());
-
-            // Update the assembler
-            let (received_length, total_length) =
-                self.assemblers.entry((src, dst, ident)).or_insert((0, 0));
-            let fragment_len = fragment_data.len();
-            *received_length += fragment_len;
-
-            // Update total_length if this is the last fragment
-            if !ip_packet.more_frags() {
-                let new_total_length = ip_packet.frag_offset() as usize + fragment_len;
-                if new_total_length > *total_length {
-                    *total_length = new_total_length;
-                }
-            }
-
-            // If all fragments have been received, reassemble and return the packet
-            if *received_length == *total_length {
-                let reassembled_fragments = self.fragments.remove(&(src, dst, ident)).unwrap();
-                let mut reassembled = Vec::new();
-                for (_, fragment) in reassembled_fragments {
-                    reassembled.extend(fragment);
-                }
-                self.assemblers.remove(&(src, dst, ident));
-                return Ok((ip_repr, Some(reassembled)));
+        // Update total_length if this is the last fragment
+        if !ipv4.more_fragments {
+            let new_total_length = ipv4.fragments_offset as usize + fragment_len;
+            if new_total_length > *total_length {
+                *total_length = new_total_length;
             }
         }
 
-        Ok((ip_repr, None))
+        // If all fragments have been received, reassemble and return the packet
+        if *received_length == *total_length {
+            let reassembled_fragments = self.fragments.remove(&(src, dst, ident)).unwrap();
+            let mut reassembled = Vec::new();
+            for (_, fragment) in reassembled_fragments {
+                reassembled.extend(fragment);
+            }
+            self.assemblers.remove(&(src, dst, ident));
+            return Some(reassembled);
+        }
+
+        None
     }
 }
 
 impl PacketCodec for PacketDecoder {
     type Item = PacketKind;
 
-    fn decode(&mut self, packet: pcap::Packet) -> Self::Item {
-        let args = (move |packet: &pcap::Packet| {
-            let (eth_header, vlan_header, data) = Self::dissect_eth_header(packet).ok()?;
-            let (ip_repr, data) = if Self::is_fragment(data).ok()? {
-                let (ip_repr, data) = self.process_fragments(data).ok()?;
-                (ip_repr, data?)
-            } else {
-                let (ip_repr, data) = Self::dissect_ip_header(data).ok()?;
-                (ip_repr, data.to_vec())
-            };
-            // let (udp_repr, data) = Self::dissect_udp_header(ip_repr, &data).ok()?;
-
-            let position = data.windows(4).position(|window| window == b"RTPS")?;
-            Some((
-                eth_header,
-                vlan_header,
-                ip_repr,
-                // udp_repr,
-                data.to_vec(),
-                position,
-            ))
-        })(&packet);
-
+    fn decode(&mut self, pcap_packet: pcap::Packet) -> Self::Item {
         macro_rules! bail {
-            () => {
-                let PacketHeader { ts, caplen, len } = *packet.header;
+            () => {{
+                let PacketHeader { ts, caplen, len } = *pcap_packet.header;
                 let ts = timeval_to_duration(ts);
                 return PacketKind::Other(OtherPacket { ts, caplen, len });
-            };
+            }};
         }
 
-        let Some((
-            eth_header,
-            vlan_header,
-            ip_repr, // udp_repr,
-            data,
-            position,
-        )) = args
-        else {
-            bail!();
+        let dissection = self.dissect_packet(&pcap_packet);
+        let packet = match dissection {
+            Dissection::NotSupported => bail!(),
+            Dissection::Ipv4Fragment { .. } => bail!(),
+            Dissection::UdpPacket(packet) => packet,
         };
+        let MaybeAssembledUdpPacket {
+            link,
+            vlan,
+            ipv4,
+            udp,
+            payload,
+        } = packet;
 
-        let payload = data[position..].to_vec();
-        if payload.get(0..4) != Some(b"RTPS") {
+        if !payload.starts_with(b"RTPS") {
             bail!();
         }
 
@@ -210,13 +155,13 @@ impl PacketCodec for PacketDecoder {
         };
 
         RtpsPacket {
-            headers: PacketHeaders {
-                pcap_header: *packet.header,
-                eth_header,
-                vlan_header,
-                ipv4_header: ip_repr,
-                // udp_header: udp_repr,
-                ts: timeval_to_duration(packet.header.ts),
+            headers: RtpsPacketHeaders {
+                pcap_header: *pcap_packet.header,
+                link,
+                vlan,
+                ipv4,
+                udp,
+                ts: timeval_to_duration(pcap_packet.header.ts),
             },
             message,
         }
@@ -251,7 +196,7 @@ impl From<OtherPacket> for PacketKind {
 }
 
 pub struct RtpsPacket {
-    pub headers: PacketHeaders,
+    pub headers: RtpsPacketHeaders,
     pub message: Message,
 }
 
@@ -264,4 +209,29 @@ pub struct OtherPacket {
 fn timeval_to_duration(ts: timeval) -> chrono::Duration {
     let timeval { tv_sec, tv_usec } = ts;
     chrono::Duration::microseconds(tv_sec * 1_000_000 + tv_usec)
+}
+
+enum Dissection<'a> {
+    NotSupported,
+    #[allow(unused)]
+    Ipv4Fragment {
+        link: Option<Ethernet2Header>,
+        vlan: Option<VlanHeader>,
+        ipv4: Ipv4Header,
+    },
+    UdpPacket(MaybeAssembledUdpPacket<'a>),
+}
+
+struct MaybeAssembledUdpPacket<'a> {
+    pub link: Option<Ethernet2Header>,
+    pub vlan: Option<VlanHeader>,
+    pub ipv4: Ipv4Header,
+    pub udp: UdpHeader,
+    pub payload: Cow<'a, [u8]>,
+}
+
+impl<'a> From<MaybeAssembledUdpPacket<'a>> for Dissection<'a> {
+    fn from(v: MaybeAssembledUdpPacket<'a>) -> Self {
+        Self::UdpPacket(v)
+    }
 }
