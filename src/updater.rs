@@ -180,6 +180,10 @@ impl Updater {
         let ts = msg.recv_time;
 
         for participant in state.participants.values_mut() {
+            participant.bit_rate_stat.set_last_ts(ts);
+            participant.msg_rate_stat.set_last_ts(ts);
+            participant.acknack_rate_stat.set_last_ts(ts);
+
             for writer in participant.writers.values_mut() {
                 writer.bit_rate_stat.set_last_ts(ts);
                 writer.msg_rate_stat.set_last_ts(ts);
@@ -327,17 +331,31 @@ impl Updater {
                 .entry(event.writer_guid.entity_id)
                 .or_default();
 
-            writer.last_sn = Some(event.writer_sn);
+            // Update the participant state
+            {
+                participant.total_msg_count += 1;
+                participant.msg_rate_stat.push(msg.recv_time, 1f64);
 
-            // Increase message count
-            writer.total_msg_count += 1;
-            writer.msg_rate_stat.push(msg.recv_time, 1f64);
+                participant.total_byte_count += event.payload_size;
+                participant
+                    .bit_rate_stat
+                    .push(msg.recv_time, (event.payload_size * 8) as f64);
+            }
 
-            // Increase byte count
-            writer.total_byte_count += event.payload_size;
-            writer
-                .bit_rate_stat
-                .push(msg.recv_time, (event.payload_size * 8) as f64);
+            // Update the writer state
+            {
+                writer.last_sn = Some(event.writer_sn);
+
+                // Increase message count on the writer state
+                writer.total_msg_count += 1;
+                writer.msg_rate_stat.push(msg.recv_time, 1f64);
+
+                // Increase byte count on the writer state
+                writer.total_byte_count += event.payload_size;
+                writer
+                    .bit_rate_stat
+                    .push(msg.recv_time, (event.payload_size * 8) as f64);
+            }
 
             // Update the stat on associated topic.
             if let Some(topic_name) = writer.topic_name() {
@@ -475,17 +493,31 @@ impl Updater {
                 frag_msg.recvd_fragments += event.fragments_in_submessage as usize;
 
                 if defrag_buf.is_full() {
-                    writer.frag_messages.remove(&event.writer_sn).unwrap();
-                    writer.last_sn = Some(event.writer_sn);
+                    // Update the participant state
+                    {
+                        participant.total_msg_count += 1;
+                        participant.msg_rate_stat.push(msg.recv_time, 1f64);
 
-                    // Increase message count on writer stat
-                    writer.total_msg_count += 1;
-                    writer.msg_rate_stat.push(msg.recv_time, 1.0);
+                        participant.total_byte_count += event.payload_size;
+                        participant
+                            .bit_rate_stat
+                            .push(msg.recv_time, (event.payload_size * 8) as f64);
+                    }
 
-                    writer.total_byte_count += event.payload_size;
-                    writer
-                        .bit_rate_stat
-                        .push(msg.recv_time, (event.payload_size * 8) as f64);
+                    // Update the writer state
+                    {
+                        writer.frag_messages.remove(&event.writer_sn).unwrap();
+                        writer.last_sn = Some(event.writer_sn);
+
+                        // Increase message count on writer stat
+                        writer.total_msg_count += 1;
+                        writer.msg_rate_stat.push(msg.recv_time, 1.0);
+
+                        writer.total_byte_count += event.payload_size;
+                        writer
+                            .bit_rate_stat
+                            .push(msg.recv_time, (event.payload_size * 8) as f64);
+                    }
 
                     // Update stat on associated topic stat
                     if let Some(topic_name) = writer.topic_name() {
@@ -586,11 +618,17 @@ impl Updater {
             .entry(event.reader_guid.entity_id)
             .or_default();
 
-        // Update general stats.
-        reader.total_acknack_count += 1;
+        // Update participant state.
+        {
+            participant.total_acknack_count += 1;
+            participant.acknack_rate_stat.push(msg.recv_time, 1f64);
+        }
 
-        // Update reader stat.
-        reader.acknack_rate_stat.push(msg.recv_time, 1f64);
+        // Update reader state.
+        {
+            reader.total_acknack_count += 1;
+            reader.acknack_rate_stat.push(msg.recv_time, 1f64);
+        }
 
         // Save missing sequence numbers
         {

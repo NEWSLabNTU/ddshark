@@ -69,8 +69,8 @@ impl StatefulWidget for ReaderTable {
         const TITLE_GUID: &str = "GUID";
         const TITLE_LAST_SN: &str = "sn";
         const TITLE_MISSING_SN: &str = "missing_sn";
-        const TITLE_TOTAL_ACKNACK_COUNT: &str = "acks";
-        const TITLE_AVERAGE_ACKNACK_RATE: &str = "ack_rate";
+        const TITLE_TOTAL_ACKNACK_COUNT: &str = "acknacks";
+        const TITLE_AVERAGE_ACKNACK_RATE: &str = "acknack rate";
         const TITLE_TYPE: &str = "type";
         const TITLE_TOPIC: &str = "topic";
 

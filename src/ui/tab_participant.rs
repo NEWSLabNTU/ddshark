@@ -1,6 +1,6 @@
 use super::{value::Value, xtable::XTableState};
 use crate::{
-    state::State,
+    state::{ParticipantState, State},
     ui::xtable::XTable,
     utils::{GuidPrefixExt, LocatorExt},
 };
@@ -36,13 +36,38 @@ impl ParticipantTable {
         let rows: Vec<Vec<Value>> = participants
             .into_iter()
             .map(|(guid_prefix, part)| {
+                let ParticipantState {
+                    ref readers,
+                    ref writers,
+                    ref unicast_locator_list,
+                    ref multicast_locator_list,
+                    total_msg_count,
+                    total_byte_count,
+                    total_acknack_count,
+                    ref msg_rate_stat,
+                    ref bit_rate_stat,
+                    ref acknack_rate_stat,
+                } = *part;
+
                 let guid_prefix = format!("{}", guid_prefix.display()).into();
                 let unicast_locator_list =
-                    format_locator_list(part.unicast_locator_list.as_deref()).into();
+                    format_locator_list(unicast_locator_list.as_deref()).into();
                 let multicast_locator_list =
-                    format_locator_list(part.multicast_locator_list.as_deref()).into();
+                    format_locator_list(multicast_locator_list.as_deref()).into();
 
-                vec![guid_prefix, unicast_locator_list, multicast_locator_list]
+                vec![
+                    guid_prefix,
+                    unicast_locator_list,
+                    multicast_locator_list,
+                    readers.len().try_into().unwrap(),
+                    writers.len().try_into().unwrap(),
+                    total_msg_count.try_into().unwrap(),
+                    total_byte_count.try_into().unwrap(),
+                    total_acknack_count.try_into().unwrap(),
+                    msg_rate_stat.stat().mean.into(),
+                    bit_rate_stat.stat().mean.into(),
+                    acknack_rate_stat.stat().mean.into(),
+                ]
             })
             .collect();
 
@@ -57,11 +82,27 @@ impl StatefulWidget for ParticipantTable {
         const TITLE_GUID_PREFIX: &str = "GUID_prefix";
         const TITLE_UNICAST_ADDRS: &str = "unicast_addrs";
         const TITLE_MULTICAST_ADDRS: &str = "multicast_addrs";
+        const TITLE_READER_COUNT: &str = "readers";
+        const TITLE_WRITER_COUNT: &str = "writers";
+        const TITLE_MESSAGE_COUNT: &str = "msgs";
+        const TITLE_BYTE_COUNT: &str = "bytes";
+        const TITLE_ACKNACK_COUNT: &str = "acknacks";
+        const TITLE_MSGRATE: &str = "msg rate";
+        const TITLE_BITRATE: &str = "bit rate";
+        const TITLE_ACKNACK_RATE: &str = "acknack rate";
 
         let header = vec![
             TITLE_GUID_PREFIX,
             TITLE_UNICAST_ADDRS,
             TITLE_MULTICAST_ADDRS,
+            TITLE_READER_COUNT,
+            TITLE_WRITER_COUNT,
+            TITLE_MESSAGE_COUNT,
+            TITLE_BYTE_COUNT,
+            TITLE_ACKNACK_COUNT,
+            TITLE_MSGRATE,
+            TITLE_BITRATE,
+            TITLE_ACKNACK_RATE,
         ];
 
         let table = XTable::new("Participants", &header, &self.rows);
