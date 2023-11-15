@@ -3,6 +3,7 @@ use std::{
     fmt::{self, Display},
 };
 
+/// The value type for the cells of [XTable](super::xtable::XTable).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     None,

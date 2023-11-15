@@ -7,6 +7,7 @@ use crate::{
 use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::GUID;
 
+/// The table that keeps a list of observed reader entities.
 pub struct ReaderTable {
     rows: Vec<Vec<Value>>,
 }

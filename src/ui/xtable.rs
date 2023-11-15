@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Row, StatefulWidget, Table, TableState},
 };
 
+/// A table widget that supports extra browsing features.
 pub struct XTable<'a> {
     title: &'a str,
     header: &'a [&'a str],

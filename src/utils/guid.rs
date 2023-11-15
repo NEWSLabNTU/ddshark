@@ -1,8 +1,8 @@
+use crate::utils::EntityIdExt;
 use rustdds::{structure::guid::GuidPrefix, GUID};
 use std::fmt::{self, Display};
 
-use crate::utils::EntityIdExt;
-
+/// Extension to [GUID].
 pub trait GUIDExt {
     fn display(&self) -> GUIDDisplay<'_>;
 }

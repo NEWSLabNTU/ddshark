@@ -1,3 +1,6 @@
+//! The updater that processes message events and maintains the
+//! singleton state.
+
 use crate::{
     config::TICK_INTERVAL,
     logger::Logger,

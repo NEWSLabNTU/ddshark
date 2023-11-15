@@ -1,8 +1,8 @@
+use crate::utils::EntityKindExt;
 use rustdds::structure::guid::EntityId;
 use std::fmt::{self, Display};
 
-use crate::utils::EntityKindExt;
-
+/// Extension to [EntityId].
 pub trait EntityIdExt {
     fn display(&self) -> EntityIdDisplay<'_>;
 }

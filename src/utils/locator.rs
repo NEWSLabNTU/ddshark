@@ -1,6 +1,7 @@
 use rustdds::structure::locator::Locator;
 use std::fmt::{self, Display};
 
+/// Extension to [Locator].
 pub trait LocatorExt {
     fn display(&self) -> LocatorDisplay<'_>;
 }

@@ -1,3 +1,5 @@
+//! Command-line options.
+
 use clap::Parser;
 use std::path::PathBuf;
 

@@ -1,3 +1,6 @@
+//! The singleton state that keeps track of all participant and entity
+//! status.
+
 use crate::{config::TICK_INTERVAL, logger::Logger, utils::TimedStat};
 use chrono::{DateTime, Local};
 use rbtree_defrag_buffer::DefragBuf;
@@ -15,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-/// The TUI state.
+/// The global singleton state.
 #[derive(Debug)]
 pub struct State {
     pub tick_since: Instant,
@@ -39,6 +42,7 @@ impl Default for State {
     }
 }
 
+/// The state for a participant.
 #[derive(Debug)]
 pub struct ParticipantState {
     pub writers: HashMap<EntityId, WriterState>,
@@ -58,6 +62,7 @@ impl Default for ParticipantState {
     }
 }
 
+/// The state for a writer entity.
 #[derive(Debug)]
 pub struct WriterState {
     pub last_sn: Option<SequenceNumber>,
@@ -99,6 +104,7 @@ impl Default for WriterState {
     }
 }
 
+/// The state for a reader entity.
 #[derive(Debug)]
 pub struct ReaderState {
     pub data: Option<DiscoveredReaderData>,
@@ -134,6 +140,7 @@ impl Default for ReaderState {
     }
 }
 
+/// The state for a topic.
 #[derive(Debug)]
 pub struct TopicState {
     pub total_msg_count: usize,
@@ -163,6 +170,7 @@ impl Default for TopicState {
     }
 }
 
+/// The state keeping track of fragmented messages.
 #[derive(Debug)]
 pub struct FragmentedMessage {
     pub data_size: usize,
@@ -186,12 +194,14 @@ impl FragmentedMessage {
     }
 }
 
+/// Records a fraction of a fragmented message.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FragmentInterval {
     pub range: Range<usize>,
     pub payload_hash: u64,
 }
 
+/// The state that keeps the counts and time of heartbeat messages.
 #[derive(Debug)]
 pub struct HeartbeatState {
     pub first_sn: i64,
@@ -200,6 +210,7 @@ pub struct HeartbeatState {
     pub since: Instant,
 }
 
+/// An abnormal event report.
 #[derive(Debug)]
 pub struct Abnormality {
     pub when: DateTime<Local>,
@@ -209,6 +220,7 @@ pub struct Abnormality {
     pub desc: String,
 }
 
+/// The state that keeping track of ACK-NACK message counts and time.
 #[derive(Debug)]
 pub struct AckNackState {
     pub missing_sn: Vec<i64>,
@@ -216,6 +228,7 @@ pub struct AckNackState {
     pub since: Instant,
 }
 
+/// General traffic statistics.
 #[derive(Debug)]
 pub struct Statistics {
     pub packet_count: usize,

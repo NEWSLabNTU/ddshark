@@ -1,5 +1,6 @@
 use std::{cmp::Ordering, collections::BinaryHeap};
 
+/// Computes the running average and variance of time series values.
 #[derive(Debug, Clone)]
 pub struct TimedStat {
     values: BinaryHeap<Entry>,

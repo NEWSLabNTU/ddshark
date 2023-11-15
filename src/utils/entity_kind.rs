@@ -1,6 +1,7 @@
 use rustdds::structure::guid::EntityKind;
 use std::fmt::{self, Display};
 
+/// Extension to [EntityKind].
 pub trait EntityKindExt {
     fn display(&self) -> EntityKindDisplay<'_>;
 }

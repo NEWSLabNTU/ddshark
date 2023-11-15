@@ -1,6 +1,7 @@
 use rustdds::structure::guid::GuidPrefix;
 use std::fmt::{self, Display};
 
+/// Extension to [GuidPrefix].
 pub trait GuidPrefixExt {
     fn display(&self) -> GuidPrefixDisplay<'_>;
 }

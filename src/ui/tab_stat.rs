@@ -5,6 +5,7 @@ use crate::{
 };
 use ratatui::{prelude::*, widgets::StatefulWidget};
 
+/// The table that presents general traffic statistics.
 pub struct StatTable {
     rows: Vec<Vec<Value>>,
 }

@@ -7,6 +7,7 @@ use crate::{
 use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::structure::locator::Locator;
 
+/// The table that keeps a list of observed participants.
 pub struct ParticipantTable {
     rows: Vec<Vec<Value>>,
 }

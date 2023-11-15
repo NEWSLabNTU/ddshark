@@ -1,4 +1,4 @@
-use std::time::Instant;
+//! Messages exchanged within the program.
 
 use etherparse::{Ethernet2Header, SingleVlanHeader};
 use rustdds::{
@@ -15,7 +15,9 @@ use rustdds::{
     SequenceNumber, Timestamp, GUID,
 };
 use smoltcp::wire::Ipv4Repr;
+use std::time::Instant;
 
+/// The message that is sent to the updater.
 #[derive(Debug, Clone)]
 pub enum UpdateEvent {
     RtpsMsg(RtpsMsgEvent),
@@ -43,12 +45,14 @@ impl From<RtpsSubmsgEvent> for UpdateEvent {
     }
 }
 
+/// The message bursts every a fixed period of time.
 #[derive(Debug, Clone)]
 pub struct TickEvent {
     pub when: Instant,
     pub recv_time: chrono::Duration,
 }
 
+/// The event records a receipt of a RTPS submessage.
 #[derive(Debug, Clone)]
 pub struct RtpsSubmsgEvent {
     pub recv_time: chrono::Duration,
@@ -56,6 +60,7 @@ pub struct RtpsSubmsgEvent {
     pub kind: RtpsSubmsgEventKind,
 }
 
+/// Variants of RTPS submessages.
 #[derive(Debug, Clone)]
 pub enum RtpsSubmsgEventKind {
     Data(Box<DataEvent>),
@@ -109,11 +114,13 @@ impl From<AckNackEvent> for RtpsSubmsgEventKind {
     }
 }
 
+/// The event records the receipt of a RTPS packet.
 #[derive(Debug, Clone)]
 pub struct RtpsMsgEvent {
     pub headers: PacketHeaders,
 }
 
+/// The dissected headers from a RTPS packet.
 #[derive(Debug, Clone)]
 pub struct PacketHeaders {
     pub pcap_header: pcap::PacketHeader,
@@ -124,6 +131,7 @@ pub struct PacketHeaders {
     pub ts: chrono::Duration,
 }
 
+/// The typed data payload decoded from a RTPS submessage.
 #[derive(Debug, Clone)]
 pub enum DataPayload {
     Topic(Box<DiscoveredTopicData>),
@@ -156,21 +164,25 @@ impl From<DiscoveredTopicData> for DataPayload {
     }
 }
 
+/// The events records the receipt of a topic discovery message.
 #[derive(Debug, Clone)]
 pub struct DiscoveredTopicEvent {
     pub data: DiscoveredTopicData,
 }
 
+/// The events records the receipt of a writer discovery message.
 #[derive(Debug, Clone)]
 pub struct DiscoveredWriterEvent {
     pub data: DiscoveredWriterData,
 }
 
+/// The events records the receipt of a reader discovery message.
 #[derive(Debug, Clone)]
 pub struct DiscoveredReaderEvent {
     pub data: DiscoveredReaderData,
 }
 
+/// The events records the receipt of a HEARTBEAT submessage.
 #[derive(Debug, Clone)]
 pub struct HeartbeatEvent {
     pub writer_guid: GUID,
@@ -179,6 +191,7 @@ pub struct HeartbeatEvent {
     pub count: i32,
 }
 
+/// The events records the receipt of a ACK-NACK submessage.
 #[derive(Debug, Clone)]
 pub struct AckNackEvent {
     pub writer_guid: GUID,
@@ -188,6 +201,7 @@ pub struct AckNackEvent {
     pub missing_sn: Vec<i64>,
 }
 
+/// The events records the receipt of a HEARTBEAT-FRAG submessage.
 #[derive(Debug, Clone)]
 pub struct HeartbeatFragEvent {
     pub writer_guid: GUID,
@@ -196,6 +210,7 @@ pub struct HeartbeatFragEvent {
     pub count: i32,
 }
 
+/// The events records the receipt of a DATA submessage.
 #[derive(Debug, Clone)]
 pub struct DataEvent {
     pub writer_guid: GUID,
@@ -204,6 +219,7 @@ pub struct DataEvent {
     pub payload: Option<DataPayload>,
 }
 
+/// The events records the receipt of a DATA-FRAG submessage.
 #[derive(Debug, Clone)]
 pub struct DataFragEvent {
     pub writer_guid: GUID,
@@ -216,6 +232,7 @@ pub struct DataFragEvent {
     pub payload_hash: u64,
 }
 
+/// The events records the receipt of a GAP submessage.
 #[derive(Debug, Clone)]
 pub struct GapEvent {
     pub writer_guid: GUID,
@@ -224,6 +241,7 @@ pub struct GapEvent {
     pub gap_list: SequenceNumberSet,
 }
 
+/// The events records the receipt of a NACK-FRAG submessage.
 #[derive(Debug, Clone)]
 pub struct NackFragEvent {
     pub writer_guid: GUID,
@@ -232,6 +250,7 @@ pub struct NackFragEvent {
     pub count: i32,
 }
 
+/// Records the GUID prefix and locators of an observed participant.
 #[derive(Debug, Clone)]
 pub struct ParticipantInfo {
     pub recv_time: chrono::Duration,

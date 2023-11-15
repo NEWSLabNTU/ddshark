@@ -5,6 +5,7 @@ use crate::{
 };
 use ratatui::{prelude::*, widgets::StatefulWidget};
 
+/// The table that keeps a list of observed topics.
 pub struct TopicTable {
     rows: Vec<Vec<Value>>,
 }

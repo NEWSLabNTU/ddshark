@@ -1,3 +1,6 @@
+//! Data logger that stores snapshots of participant and entity
+//! status.
+
 use chrono::{DateTime, Utc};
 use rustdds::{
     structure::guid::{EntityId, GuidPrefix},

@@ -1,3 +1,5 @@
+//! Utility types and functions.
+
 mod entity_id;
 mod entity_kind;
 mod guid;

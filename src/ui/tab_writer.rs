@@ -7,6 +7,7 @@ use crate::{
 use ratatui::{prelude::*, widgets::StatefulWidget};
 use rustdds::GUID;
 
+/// The table that keeps a list of observed writer entities.
 pub struct WriterTable {
     rows: Vec<Vec<Value>>,
 }

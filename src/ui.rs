@@ -1,3 +1,5 @@
+//! The text-user-interface.
+
 mod tab_abnormality;
 mod tab_participant;
 mod tab_reader;

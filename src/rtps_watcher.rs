@@ -1,3 +1,6 @@
+//! RTPS watcher that monitors RTPS traffic from network devices or
+//! packet dump files.
+
 use super::PacketSource;
 use crate::{
     message::{
@@ -64,6 +67,7 @@ struct Interpreter {
 
 const SEND_TIMEOUT: Duration = Duration::from_millis(100);
 
+/// The RTPS watcher function.
 pub async fn rtps_watcher(
     source: PacketSource,
     tx: flume::Sender<UpdateEvent>,
@@ -100,6 +104,7 @@ pub async fn rtps_watcher(
     Ok(())
 }
 
+/// Handles a RTPS packet.
 fn handle_msg(msg: &RtpsPacket) -> Vec<UpdateEvent> {
     let RtpsPacket { headers, message } = msg;
 
@@ -157,6 +162,7 @@ fn handle_msg(msg: &RtpsPacket) -> Vec<UpdateEvent> {
     events
 }
 
+/// Handles a submessage within a RTPS packet.
 fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<UpdateEvent> {
     match &submsg.body {
         SubmessageBody::Entity(emsg) => {
