@@ -19,7 +19,7 @@ Taiwan University.
 Download the source code using git.
 
 ```bash
-git clone https://github.com/jerry73204/ddshark.git --recurse-submodules
+git clone https://github.com/NEWSLabNTU/ddshark.git --recurse-submodules
 cd ddshark
 ```
 
