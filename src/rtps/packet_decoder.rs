@@ -6,7 +6,7 @@ use etherparse::{
 };
 use libc::timeval;
 use pcap::{PacketCodec, PacketHeader};
-use rustdds::serialization::Message;
+use rustdds::rtps::Message;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},

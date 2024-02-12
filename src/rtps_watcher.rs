@@ -12,37 +12,37 @@ use crate::{
     utils::EntityIdExt,
 };
 use anyhow::Result;
+use bytes::Bytes;
 use etherparse::{Ipv4Header, UdpHeader};
 use futures::{stream, StreamExt, TryStreamExt};
 use itertools::chain;
 use rustdds::{
-    dds::{traits::serde_adapters::no_key::DeserializerAdapter, DiscoveredTopicData},
-    discovery::data_types::{
-        spdp_participant_data::SpdpDiscoveredParticipantData,
-        topic_data::{DiscoveredReaderData, DiscoveredWriterData},
+    discovery::{
+        DiscoveredReaderData, DiscoveredTopicData, DiscoveredWriterData,
+        SpdpDiscoveredParticipantData,
     },
     messages::{
         header::Header,
         protocol_version::ProtocolVersion,
         submessages::{
-            submessage_elements::serialized_payload::SerializedPayload,
+            elements::serialized_payload::SerializedPayload,
+            info_source::InfoSource,
             submessages::{
-                AckNack, Data, DataFrag, EntitySubmessage, Gap, Heartbeat, HeartbeatFrag,
-                InfoDestination, InfoSource, InfoTimestamp, InterpreterSubmessage, NackFrag,
+                AckNack, Data, DataFrag, Gap, Heartbeat, HeartbeatFrag, InfoDestination,
+                InfoTimestamp, InterpreterSubmessage, NackFrag, ReaderSubmessage, WriterSubmessage,
             },
         },
         vendor_id::VendorId,
     },
-    serialization::{
-        pl_cdr_deserializer::{PlCdrDeserialize, PlCdrDeserializerAdapter},
-        SubMessage, SubmessageBody,
-    },
+    no_key::DeserializerAdapter,
+    rtps::{Submessage, SubmessageBody},
+    serialization::pl_cdr_adapters::{PlCdrDeserialize, PlCdrDeserializerAdapter},
     structure::{
         guid::{EntityId, GuidPrefix},
         locator::Locator,
         sequence_number::FragmentNumber,
     },
-    SequenceNumber, Timestamp, GUID,
+    RepresentationIdentifier, SequenceNumber, Timestamp, GUID,
 };
 use serde::Deserialize;
 use std::{
@@ -159,28 +159,37 @@ fn handle_msg(msg: &RtpsPacket) -> Vec<UpdateEvent> {
 }
 
 /// Handles a submessage within a RTPS packet.
-fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<UpdateEvent> {
+fn handle_submsg(interpreter: &mut Interpreter, submsg: &Submessage) -> Vec<UpdateEvent> {
     match &submsg.body {
-        SubmessageBody::Entity(emsg) => {
-            let kind = match emsg {
-                EntitySubmessage::AckNack(data, _) => handle_submsg_acknack(interpreter, data),
-                EntitySubmessage::Data(data, _) => handle_submsg_data(interpreter, data),
-                EntitySubmessage::DataFrag(data, _) => handle_submsg_datafrag(interpreter, data),
-                EntitySubmessage::Gap(data, _) => handle_submsg_gap(interpreter, data),
-                EntitySubmessage::Heartbeat(data, _) => handle_submsg_heartbeat(interpreter, data),
-                EntitySubmessage::HeartbeatFrag(data, _) => {
+        SubmessageBody::Writer(wmsg) => {
+            let kind = match wmsg {
+                WriterSubmessage::Data(data, _) => handle_submsg_data(interpreter, data),
+                WriterSubmessage::DataFrag(data, _) => handle_submsg_datafrag(interpreter, data),
+                WriterSubmessage::Gap(data, _) => handle_submsg_gap(interpreter, data),
+                WriterSubmessage::Heartbeat(data, _) => handle_submsg_heartbeat(interpreter, data),
+                WriterSubmessage::HeartbeatFrag(data, _) => {
                     handle_submsg_heartbeatfrag(interpreter, data)
                 }
-                EntitySubmessage::NackFrag(data, _) => handle_submsg_nackfrag(interpreter, data),
             };
-
             let event = RtpsSubmsgEvent {
                 recv_time: interpreter.recv_time,
                 rtps_time: interpreter.timestamp,
                 kind,
             }
             .into();
-
+            vec![event]
+        }
+        SubmessageBody::Reader(rmsg) => {
+            let kind = match rmsg {
+                ReaderSubmessage::AckNack(data, _) => handle_submsg_acknack(interpreter, data),
+                ReaderSubmessage::NackFrag(data, _) => handle_submsg_nackfrag(interpreter, data),
+            };
+            let event = RtpsSubmsgEvent {
+                recv_time: interpreter.recv_time,
+                rtps_time: interpreter.timestamp,
+                kind,
+            }
+            .into();
             vec![event]
         }
         SubmessageBody::Interpreter(imsg) => match imsg {
@@ -189,6 +198,7 @@ fn handle_submsg(interpreter: &mut Interpreter, submsg: &SubMessage) -> Vec<Upda
                     protocol_version,
                     vendor_id,
                     guid_prefix,
+                    ..
                 } = *info;
                 assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
 
@@ -250,7 +260,7 @@ fn handle_submsg_data(interpreter: &Interpreter, data: &Data) -> RtpsSubmsgEvent
     let writer_guid = GUID::new(interpreter.src_guid_prefix, writer_id);
 
     let payload_size = match serialized_payload {
-        Some(payload) => payload.value.len(),
+        Some(payload) => payload.len(),
         None => 0,
     };
 
@@ -498,18 +508,15 @@ fn handle_submsg_acknack(interpreter: &Interpreter, data: &AckNack) -> RtpsSubms
     .into()
 }
 
-fn deserialize_payload<T>(entity_id: EntityId, payload: Option<&SerializedPayload>) -> Option<T>
+fn deserialize_payload<T>(entity_id: EntityId, payload: Option<&Bytes>) -> Option<T>
 where
-    T: for<'de> Deserialize<'de> + PlCdrDeserialize,
+    T: PlCdrDeserialize,
 {
     let Some(payload) = payload else {
         error!("no payload found for entity {}", entity_id.display());
         return None;
     };
-    let result = PlCdrDeserializerAdapter::from_bytes(
-        payload.value.as_ref(),
-        payload.representation_identifier,
-    );
+    let result = PlCdrDeserializerAdapter::from_bytes(payload, RepresentationIdentifier::PL_CDR_LE);
     let data = match result {
         Ok(data) => data,
         Err(err) => {

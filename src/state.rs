@@ -5,7 +5,7 @@ use crate::{config::TICK_INTERVAL, logger::Logger, utils::TimedStat};
 use chrono::{DateTime, Local};
 use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
-    discovery::data_types::topic_data::{DiscoveredReaderData, DiscoveredWriterData},
+    discovery::{DiscoveredReaderData, DiscoveredWriterData},
     structure::{
         guid::{EntityId, GuidPrefix},
         locator::Locator,

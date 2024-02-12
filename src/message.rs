@@ -2,10 +2,9 @@
 
 use etherparse::{Ethernet2Header, Ipv4Header, UdpHeader, VlanHeader};
 use rustdds::{
-    dds::DiscoveredTopicData,
-    discovery::data_types::{
+    discovery::{
+        sedp_messages::{DiscoveredReaderData, DiscoveredTopicData, DiscoveredWriterData},
         spdp_participant_data::SpdpDiscoveredParticipantData,
-        topic_data::{DiscoveredReaderData, DiscoveredWriterData},
     },
     structure::{
         guid::GuidPrefix,
