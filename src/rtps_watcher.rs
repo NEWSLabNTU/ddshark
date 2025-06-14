@@ -8,6 +8,7 @@ use crate::{
         NackFragEvent, ParticipantInfo, RtpsPacketHeaders, RtpsSubmsgEvent, RtpsSubmsgEventKind,
         UpdateEvent,
     },
+    metrics::MetricsCollector,
     rtps::RtpsPacket,
     utils::EntityIdExt,
 };
@@ -72,6 +73,7 @@ pub async fn rtps_watcher(
     source: PacketSource,
     tx: flume::Sender<UpdateEvent>,
     cancel_token: CancellationToken,
+    metrics: MetricsCollector,
 ) -> Result<()> {
     let stream = source.into_stream()?;
 
@@ -84,17 +86,39 @@ pub async fn rtps_watcher(
     let mut stream = stream.take_until(cancel_token.cancelled()).boxed();
 
     while let Some(msg) = stream.try_next().await? {
-        let events = handle_msg(&msg);
+        metrics.packet_received();
+
+        let events = match handle_msg(&msg) {
+            Ok(events) => {
+                metrics.packet_parsed();
+                if !events.is_empty() {
+                    metrics.rtps_message_found();
+                }
+                events
+            }
+            Err(e) => {
+                metrics.parse_error();
+                debug!("Failed to parse packet: {}", e);
+                continue;
+            }
+        };
+
+        // Update queue depth metric
+        metrics.update_queue_depth(tx.len());
 
         // Send events to the updater
         for event in events {
             let send = tokio::time::timeout(SEND_TIMEOUT, tx.send_async(event));
 
             match send.await {
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => {
+                    metrics.message_sent();
+                }
                 Ok(Err(flume::SendError(_))) => return Ok(()),
                 Err(_) => {
                     warn!("congestion occurs");
+                    metrics.send_timeout();
+                    metrics.message_dropped();
                     continue;
                 }
             }
@@ -105,7 +129,7 @@ pub async fn rtps_watcher(
 }
 
 /// Handles a RTPS packet.
-fn handle_msg(msg: &RtpsPacket) -> Vec<UpdateEvent> {
+fn handle_msg(msg: &RtpsPacket) -> Result<Vec<UpdateEvent>> {
     let RtpsPacket { headers, message } = msg;
 
     let mut interpreter = {
@@ -155,7 +179,7 @@ fn handle_msg(msg: &RtpsPacket) -> Vec<UpdateEvent> {
     // Collect all generated events
     let events: Vec<_> = chain!([part_info_event], submsg_events).collect();
 
-    events
+    Ok(events)
 }
 
 /// Handles a submessage within a RTPS packet.

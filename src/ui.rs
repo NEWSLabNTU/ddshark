@@ -17,7 +17,7 @@ use self::{
     tab_topic::{TopicTable, TopicTableState},
     tab_writer::{WriterTable, WriterTableState},
 };
-use crate::{message::UpdateEvent, state::State};
+use crate::{message::UpdateEvent, metrics::MetricsCollector, state::State};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -48,6 +48,7 @@ const TAB_TITLES: &[&str] = &[
     "Reader",
     "Topics",
     "Statistics",
+    "Metrics",
     "Abnormalities",
 ];
 const TAB_IDX_PARTICIPANT: usize = 0;
@@ -55,7 +56,8 @@ const TAB_IDX_WRITER: usize = 1;
 const TAB_IDX_READER: usize = 2;
 const TAB_IDX_TOPIC: usize = 3;
 const TAB_IDX_STATISTICS: usize = 4;
-const TAB_IDX_ABNORMALITIES: usize = 5;
+const TAB_IDX_METRICS: usize = 5;
+const TAB_IDX_ABNORMALITIES: usize = 6;
 
 pub(crate) struct Tui {
     tab_participant: ParticipantTableState,
@@ -70,6 +72,7 @@ pub(crate) struct Tui {
     cancel_token: CancellationToken,
     tx: flume::Sender<UpdateEvent>,
     state: Arc<Mutex<State>>,
+    metrics: MetricsCollector,
 }
 
 impl Tui {
@@ -78,6 +81,7 @@ impl Tui {
         tx: flume::Sender<UpdateEvent>,
         cancel_token: CancellationToken,
         state: Arc<Mutex<State>>,
+        metrics: MetricsCollector,
     ) -> Self {
         Self {
             tx,
@@ -92,6 +96,7 @@ impl Tui {
             tab_reader: ReaderTableState::new(),
             tab_stat: StatTableState::new(),
             focus: Focus::Dashboard,
+            metrics,
         }
     }
 
@@ -285,6 +290,9 @@ impl Tui {
             TAB_IDX_STATISTICS => {
                 frame.render_stateful_widget(StatTable::new(&state), chunks[1], &mut self.tab_stat);
             }
+            TAB_IDX_METRICS => {
+                Self::render_metrics_panel(frame, chunks[1], &self.metrics);
+            }
             TAB_IDX_ABNORMALITIES => frame.render_stateful_widget(
                 AbnormalityTable::new(&state),
                 chunks[1],
@@ -352,6 +360,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.previous_item(),
             TAB_IDX_TOPIC => self.tab_topic.previous_item(),
             TAB_IDX_STATISTICS => self.tab_stat.previous_item(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.previous_item(),
             _ => unreachable!(),
         }
@@ -364,6 +373,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.next_item(),
             TAB_IDX_TOPIC => self.tab_topic.next_item(),
             TAB_IDX_STATISTICS => self.tab_stat.next_item(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.next_item(),
             _ => unreachable!(),
         }
@@ -376,6 +386,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.previous_page(),
             TAB_IDX_TOPIC => self.tab_topic.previous_page(),
             TAB_IDX_STATISTICS => self.tab_stat.previous_page(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.previous_page(),
             _ => unreachable!(),
         }
@@ -388,6 +399,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.next_page(),
             TAB_IDX_TOPIC => self.tab_topic.next_page(),
             TAB_IDX_STATISTICS => self.tab_stat.next_page(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.next_page(),
             _ => unreachable!(),
         }
@@ -400,6 +412,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.first_item(),
             TAB_IDX_TOPIC => self.tab_topic.first_item(),
             TAB_IDX_STATISTICS => self.tab_stat.first_item(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.first_item(),
             _ => unreachable!(),
         }
@@ -412,6 +425,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.last_item(),
             TAB_IDX_TOPIC => self.tab_topic.last_item(),
             TAB_IDX_STATISTICS => self.tab_stat.last_item(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.last_item(),
             _ => unreachable!(),
         }
@@ -424,6 +438,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.previous_column(),
             TAB_IDX_TOPIC => self.tab_topic.previous_column(),
             TAB_IDX_STATISTICS => self.tab_stat.previous_column(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.previous_column(),
             _ => unreachable!(),
         }
@@ -436,6 +451,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.next_column(),
             TAB_IDX_TOPIC => self.tab_topic.next_column(),
             TAB_IDX_STATISTICS => self.tab_stat.next_column(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.next_column(),
             _ => unreachable!(),
         }
@@ -448,6 +464,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.toggle_show(),
             TAB_IDX_TOPIC => self.tab_topic.toggle_show(),
             TAB_IDX_STATISTICS => self.tab_stat.toggle_show(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.toggle_show(),
             _ => unreachable!(),
         }
@@ -460,6 +477,7 @@ q         Close dialog or exit
             TAB_IDX_READER => self.tab_reader.toggle_sort(),
             TAB_IDX_TOPIC => self.tab_topic.toggle_sort(),
             TAB_IDX_STATISTICS => self.tab_stat.toggle_sort(),
+            TAB_IDX_METRICS => {} // No navigation for metrics panel
             TAB_IDX_ABNORMALITIES => self.tab_abnormality.toggle_sort(),
             _ => unreachable!(),
         }
@@ -479,6 +497,77 @@ q         Close dialog or exit
                 ControlFlow::Continue(())
             }
         }
+    }
+
+    fn render_metrics_panel<B>(frame: &mut Frame<B>, area: Rect, metrics: &MetricsCollector)
+    where
+        B: Backend,
+    {
+        let snapshot = metrics.snapshot();
+
+        // Create vertical layout for different metric categories
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(8), // Performance overview
+                Constraint::Length(6), // Throughput metrics
+                Constraint::Length(6), // Queue metrics
+                Constraint::Length(6), // Latency metrics
+                Constraint::Min(1),    // Additional space
+            ])
+            .split(area);
+
+        // Performance Overview
+        let overview_text = format!(
+            "Uptime: {:?}\nPackets: {} received, {} parsed ({} errors)\nRTPS Messages: {}\nDrop Rate: {:.2}%",
+            snapshot.uptime,
+            snapshot.packets_received,
+            snapshot.packets_parsed,
+            snapshot.parse_errors,
+            snapshot.rtps_messages_found,
+            snapshot.drop_rate,
+        );
+        let overview_block = Block::default()
+            .title("Performance Overview")
+            .borders(Borders::ALL);
+        let overview = Paragraph::new(overview_text).block(overview_block);
+        frame.render_widget(overview, chunks[0]);
+
+        // Throughput Metrics
+        let throughput_text = format!(
+            "Packet Rate: {:.1} packets/sec\nMessage Rate: {:.1} messages/sec\nProcessing Rate: {:.1} messages/sec\nSend Timeouts: {}",
+            snapshot.packet_rate,
+            snapshot.message_rate,
+            snapshot.processing_rate,
+            snapshot.send_timeouts,
+        );
+        let throughput_block = Block::default().title("Throughput").borders(Borders::ALL);
+        let throughput = Paragraph::new(throughput_text).block(throughput_block);
+        frame.render_widget(throughput, chunks[1]);
+
+        // Queue Metrics
+        let queue_text = format!(
+            "Current Queue Depth: {}\nMax Queue Depth: {}\nMessages Sent: {}\nMessages Dropped: {}",
+            snapshot.queue_depth,
+            snapshot.max_queue_depth,
+            snapshot.messages_sent,
+            snapshot.messages_dropped,
+        );
+        let queue_block = Block::default().title("Queue Status").borders(Borders::ALL);
+        let queue = Paragraph::new(queue_text).block(queue_block);
+        frame.render_widget(queue, chunks[2]);
+
+        // Latency Metrics
+        let latency_text = format!(
+            "Processing Latency P50: {}μs\nProcessing Latency P99: {}μs\nLock Wait P50: {}μs\nLock Wait P99: {}μs",
+            snapshot.processing_latency_p50,
+            snapshot.processing_latency_p99,
+            snapshot.lock_wait_p50,
+            snapshot.lock_wait_p99,
+        );
+        let latency_block = Block::default().title("Latency").borders(Borders::ALL);
+        let latency = Paragraph::new(latency_text).block(latency_block);
+        frame.render_widget(latency, chunks[3]);
     }
 }
 

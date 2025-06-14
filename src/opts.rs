@@ -9,6 +9,10 @@ pub struct Opts {
     #[clap(long, default_value = "4")]
     pub refresh_rate: u32,
 
+    /// Size of the message buffer between components.
+    #[clap(long, default_value = "1024")]
+    pub buffer_size: usize,
+
     /// The input packet dump to be inspected.
     #[clap(short = 'f', long)]
     pub file: Option<PathBuf>,
@@ -32,4 +36,12 @@ pub struct Opts {
     /// Start logging when the program starts.
     #[clap(long)]
     pub log_on_start: bool,
+
+    /// Enable metrics logging to file.
+    #[clap(long)]
+    pub metrics_log: bool,
+
+    /// Metrics log file path.
+    #[clap(long, default_value = "ddshark-metrics.csv")]
+    pub metrics_log_file: PathBuf,
 }

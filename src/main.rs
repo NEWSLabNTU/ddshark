@@ -1,8 +1,12 @@
+mod capabilities;
 mod config;
 mod logger;
 mod message;
+mod metrics;
+mod metrics_logger;
 mod opts;
 mod otlp;
+// mod otlp_metrics;
 mod rtps;
 mod rtps_watcher;
 mod state;
@@ -12,10 +16,10 @@ mod utils;
 // mod qos;
 // mod dds;
 
-use crate::{opts::Opts, state::State};
+use crate::{metrics::MetricsCollector, opts::Opts, state::State};
 use anyhow::{bail, Result};
 use clap::Parser;
-use futures::future;
+use futures::future::{self, try_join3, BoxFuture};
 use rtps::PacketSource;
 use std::{
     future::Future,
@@ -38,6 +42,7 @@ fn main() -> Result<()> {
 
     let state = Arc::new(Mutex::new(State::default()));
     let cancel_token = CancellationToken::new();
+    let metrics = MetricsCollector::new();
 
     // Set Ctrl-C handler
     {
@@ -47,7 +52,7 @@ fn main() -> Result<()> {
         })?;
     }
 
-    let (tx, rx) = flume::bounded(64);
+    let (tx, rx) = flume::bounded(opts.buffer_size);
 
     let backend_handle = {
         let opts = opts.clone();
@@ -64,7 +69,12 @@ fn main() -> Result<()> {
                 (None, None) => PacketSource::Default,
             };
 
-            let watcher = rtps_watcher::rtps_watcher(packet_src, tx.clone(), cancel_token.clone());
+            let watcher = rtps_watcher::rtps_watcher(
+                packet_src,
+                tx.clone(),
+                cancel_token.clone(),
+                metrics.clone(),
+            );
             spawn(cancel_token.clone(), watcher)
         };
 
@@ -72,11 +82,62 @@ fn main() -> Result<()> {
         let updater_task = {
             let state = state.clone();
 
-            let updater = crate::updater::Updater::new(rx, cancel_token.clone(), state, &opts)?;
+            let updater = crate::updater::Updater::new(
+                rx,
+                cancel_token.clone(),
+                state,
+                &opts,
+                metrics.clone(),
+            )?;
             spawn(cancel_token.clone(), updater.run())
         };
 
-        let future = future::try_join(rpts_watcher_task, updater_task);
+        // Start metrics logger if enabled
+        let metrics_logger_task = if opts.metrics_log {
+            let logger_handle = crate::metrics_logger::spawn_metrics_logger(
+                metrics.clone(),
+                opts.metrics_log_file.clone(),
+                cancel_token.clone(),
+            )?;
+            Some(spawn(cancel_token.clone(), async move {
+                logger_handle.await.map_err(anyhow::Error::from)?
+            }))
+        } else {
+            None
+        };
+
+        // Start OTLP metrics exporter if OTLP is enabled (currently disabled due to API incompatibility)
+        let _otlp_metrics_task: Option<()> = None;
+        /*
+        let otlp_metrics_task = if opts.otlp {
+            let exporter_handle = crate::otlp_metrics::spawn_otlp_metrics_exporter(
+                metrics.clone(),
+                &opts,
+                cancel_token.clone(),
+            )?;
+            Some(spawn(cancel_token.clone(), async move {
+                exporter_handle.await.map_err(anyhow::Error::from)?
+            }))
+        } else {
+            None
+        };
+        */
+
+        let future: BoxFuture<'_, Result<()>> = if let Some(logger_task) = metrics_logger_task {
+            // Logger enabled
+            Box::pin(async move {
+                try_join3(rpts_watcher_task, updater_task, logger_task)
+                    .await
+                    .map(|_| ())
+            })
+        } else {
+            // Core tasks only
+            Box::pin(async move {
+                future::try_join(rpts_watcher_task, updater_task)
+                    .await
+                    .map(|_| ())
+            })
+        };
 
         thread::spawn(move || -> Result<()> {
             let rt = Runtime::new()?;
@@ -88,7 +149,7 @@ fn main() -> Result<()> {
     // Run TUI
     if !opts.no_tui {
         let tick_dur = Duration::from_secs(1) / opts.refresh_rate;
-        let tui = Tui::new(tick_dur, tx, cancel_token, state);
+        let tui = Tui::new(tick_dur, tx, cancel_token, state, metrics);
         tui.run()?;
     } else {
         mem::drop(tx);

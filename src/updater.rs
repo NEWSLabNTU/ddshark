@@ -9,6 +9,7 @@ use crate::{
         HeartbeatFragEvent, NackFragEvent, ParticipantInfo, RtpsSubmsgEvent, RtpsSubmsgEventKind,
         TickEvent, UpdateEvent,
     },
+    metrics::MetricsCollector,
     opts::Opts,
     otlp,
     state::{Abnormality, AckNackState, FragmentedMessage, HeartbeatState, State},
@@ -29,6 +30,7 @@ pub struct Updater {
     otlp_handle: Option<otlp::TraceHandle>,
     cancel_token: CancellationToken,
     logger: Option<Logger>,
+    metrics: MetricsCollector,
 }
 
 impl Updater {
@@ -37,6 +39,7 @@ impl Updater {
         cancel_token: CancellationToken,
         state: Arc<Mutex<State>>,
         opts: &Opts,
+        metrics: MetricsCollector,
     ) -> Result<Self> {
         // Enable OTLP if `otlp_enable` is true.
         let otlp_handle = match opts.otlp {
@@ -56,6 +59,7 @@ impl Updater {
             otlp_handle,
             logger,
             cancel_token,
+            metrics,
         })
     }
 
@@ -75,9 +79,11 @@ impl Updater {
             };
 
             let state = self.state.clone();
+            let lock_start = Instant::now();
             let Ok(mut state) = state.lock() else {
                 panic!("INTERNAL ERROR Mutex poision error");
             };
+            self.metrics.lock_acquired(lock_start.elapsed());
 
             // Remember the difference b/w the current and receipt time.
             let now = Instant::now();
@@ -120,12 +126,25 @@ impl Updater {
             };
 
             let state = self.state.clone();
+            let lock_start = Instant::now();
             let Ok(mut state) = state.lock() else {
                 error!("INTERNAL ERROR Mutex poision error");
                 break;
             };
+            self.metrics.lock_acquired(lock_start.elapsed());
 
-            self.handle_message(&mut state, &message)?;
+            let process_start = Instant::now();
+            match self.handle_message(&mut state, &message) {
+                Ok(()) => {
+                    self.metrics.message_processed();
+                    self.metrics
+                        .record_processing_latency(process_start.elapsed());
+                }
+                Err(e) => {
+                    self.metrics.processing_error();
+                    error!("Error processing message: {}", e);
+                }
+            }
         }
 
         // Turn off logging
@@ -208,6 +227,7 @@ impl Updater {
     }
 
     fn handle_data_event(&self, state: &mut State, msg: &RtpsSubmsgEvent, event: &DataEvent) {
+        self.metrics.state_update();
         // println!(
         //     "{}\t{}\t{:.2}bps",
         //     event.writer_id.display(),
@@ -378,6 +398,7 @@ impl Updater {
         msg: &RtpsSubmsgEvent,
         event: &DataFragEvent,
     ) {
+        self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.datafrag_submsg_count += 1;
 
@@ -537,6 +558,7 @@ impl Updater {
     }
 
     fn handle_gap_event(&self, state: &mut State, _msg: &RtpsSubmsgEvent, _event: &GapEvent) {
+        self.metrics.state_update();
         state.stat.packet_count += 1;
 
         // let GapEvent {
@@ -564,6 +586,7 @@ impl Updater {
         _msg: &RtpsSubmsgEvent,
         event: &HeartbeatEvent,
     ) {
+        self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.heartbeat_submsg_count += 1;
 
@@ -604,6 +627,7 @@ impl Updater {
     }
 
     fn handle_acknack_event(&self, state: &mut State, msg: &RtpsSubmsgEvent, event: &AckNackEvent) {
+        self.metrics.state_update();
         // Update statistics
         state.stat.packet_count += 1;
         state.stat.acknack_submsg_count += 1;
@@ -663,6 +687,7 @@ impl Updater {
         _msg: &RtpsSubmsgEvent,
         _event: &NackFragEvent,
     ) {
+        self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.ackfrag_submsg_count += 1;
     }
@@ -673,11 +698,13 @@ impl Updater {
         _msg: &RtpsSubmsgEvent,
         _event: &HeartbeatFragEvent,
     ) {
+        self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.heartbeat_frag_submsg_count += 1;
     }
 
     fn handle_participant_info(&self, state: &mut State, info: &ParticipantInfo) {
+        self.metrics.state_update();
         let ParticipantInfo {
             guid_prefix,
             ref unicast_locator_list,
