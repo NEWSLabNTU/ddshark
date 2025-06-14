@@ -413,7 +413,13 @@ fn handle_submsg_gap(interpreter: &Interpreter, data: &Gap) -> RtpsSubmsgEventKi
         ref gap_list,
     } = *data;
     let writer_guid = GUID::new(interpreter.src_guid_prefix, writer_id);
-    let reader_guid = GUID::new(interpreter.dst_guid_prefix.unwrap(), reader_id); // TODO: warn if dst_guid_prefix is not set
+    let reader_guid = match interpreter.dst_guid_prefix {
+        Some(prefix) => GUID::new(prefix, reader_id),
+        None => {
+            warn!("GAP submessage received without destination GUID prefix - using source prefix as fallback");
+            GUID::new(interpreter.src_guid_prefix, reader_id)
+        }
+    };
 
     // println!("gap {}", writer_id.display());
 
@@ -435,7 +441,13 @@ fn handle_submsg_nackfrag(interpreter: &Interpreter, data: &NackFrag) -> RtpsSub
         count,
         ..
     } = *data;
-    let writer_guid = GUID::new(interpreter.dst_guid_prefix.unwrap(), writer_id); // TODO: warn if dst_guid_prefix is not set
+    let writer_guid = match interpreter.dst_guid_prefix {
+        Some(prefix) => GUID::new(prefix, writer_id),
+        None => {
+            warn!("NackFrag submessage received without destination GUID prefix - using source prefix as fallback");
+            GUID::new(interpreter.src_guid_prefix, writer_id)
+        }
+    };
     let reader_guid = GUID::new(interpreter.src_guid_prefix, reader_id);
 
     // println!("nack {}\t{fragment_number_state:?}", writer_id.display());
@@ -512,7 +524,13 @@ fn handle_submsg_acknack(interpreter: &Interpreter, data: &AckNack) -> RtpsSubms
         ..
     } = *data;
 
-    let writer_guid = GUID::new(interpreter.dst_guid_prefix.unwrap(), writer_id); // TODO: warn if dst_guid_prefix is not set
+    let writer_guid = match interpreter.dst_guid_prefix {
+        Some(prefix) => GUID::new(prefix, writer_id),
+        None => {
+            warn!("AckNack submessage received without destination GUID prefix - using source prefix as fallback");
+            GUID::new(interpreter.src_guid_prefix, writer_id)
+        }
+    };
     let reader_guid = GUID::new(interpreter.src_guid_prefix, reader_id);
     let base_sn = reader_sn_state.base().0;
     let missing_sn: Vec<_> = reader_sn_state

@@ -248,7 +248,12 @@ impl Updater {
                 DataPayload::Writer(data) => {
                     let remote_writer_guid = data.writer_proxy.remote_writer_guid;
                     // TODO: Find the correct writer
-                    assert_eq!(event.writer_guid.prefix, remote_writer_guid.prefix);
+                    if event.writer_guid.prefix != remote_writer_guid.prefix {
+                        warn!(
+                            "Discovery data writer GUID prefix mismatch: expected {:?}, got {:?}",
+                            event.writer_guid.prefix, remote_writer_guid.prefix
+                        );
+                    }
 
                     let participant = state
                         .participants
@@ -294,7 +299,12 @@ impl Updater {
                     //     event.writer_guid.prefix,
                     //     remote_reader_guid.prefix
                     // );
-                    assert_eq!(event.writer_guid.prefix, remote_reader_guid.prefix);
+                    if event.writer_guid.prefix != remote_reader_guid.prefix {
+                        warn!(
+                            "Discovery data reader GUID prefix mismatch: expected {:?}, got {:?}",
+                            event.writer_guid.prefix, remote_reader_guid.prefix
+                        );
+                    }
 
                     let participant = state
                         .participants
@@ -629,11 +639,24 @@ impl Updater {
         if let Some(heartbeat) = &mut writer.heartbeat {
             if heartbeat.count < event.count {
                 if heartbeat.first_sn > event.first_sn.0 {
-                    // TODO: warn
+                    warn!(
+                        "Heartbeat first_sn decreased from {} to {}",
+                        heartbeat.first_sn, event.first_sn.0
+                    );
                 }
 
                 if heartbeat.last_sn > event.last_sn.0 {
-                    // TODO: warn
+                    warn!(
+                        "Heartbeat last_sn decreased from {} to {}",
+                        heartbeat.last_sn, event.last_sn.0
+                    );
+                }
+
+                if event.last_sn.0 < event.first_sn.0 {
+                    warn!(
+                        "Heartbeat has invalid sequence number range: first_sn={} > last_sn={}",
+                        event.first_sn.0, event.last_sn.0
+                    );
                 }
 
                 *heartbeat = HeartbeatState {
@@ -644,9 +667,16 @@ impl Updater {
                 };
             }
         } else {
+            if event.last_sn.0 < event.first_sn.0 {
+                warn!(
+                    "Initial heartbeat has invalid sequence number range: first_sn={} > last_sn={}",
+                    event.first_sn.0, event.last_sn.0
+                );
+            }
+
             writer.heartbeat = Some(HeartbeatState {
                 first_sn: event.first_sn.0,
-                last_sn: event.first_sn.0,
+                last_sn: event.last_sn.0,
                 count: event.count,
                 since: Instant::now(),
             });
