@@ -3,6 +3,7 @@
 
 use crate::{
     config::TICK_INTERVAL,
+    lockfree_state::LockFreeStatistics,
     logger::Logger,
     message::{
         AckNackEvent, DataEvent, DataFragEvent, DataPayload, GapEvent, HeartbeatEvent,
@@ -31,6 +32,7 @@ pub struct Updater {
     cancel_token: CancellationToken,
     logger: Option<Logger>,
     metrics: MetricsCollector,
+    lockfree_stats: LockFreeStatistics,
 }
 
 impl Updater {
@@ -60,6 +62,7 @@ impl Updater {
             logger,
             cancel_token,
             metrics,
+            lockfree_stats: LockFreeStatistics::new(),
         })
     }
 
@@ -337,9 +340,15 @@ impl Updater {
             }
         }
 
-        // Update general statistics
+        // Update general statistics (both legacy and lock-free)
         state.stat.packet_count += 1;
         state.stat.data_submsg_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .data_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         {
             let participant = state
@@ -401,6 +410,12 @@ impl Updater {
         self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.datafrag_submsg_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .datafrag_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let DataFragEvent {
             fragment_starting_num,
@@ -560,6 +575,12 @@ impl Updater {
     fn handle_gap_event(&self, state: &mut State, _msg: &RtpsSubmsgEvent, _event: &GapEvent) {
         self.metrics.state_update();
         state.stat.packet_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .gap_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // let GapEvent {
         //     writer_id,
@@ -589,6 +610,12 @@ impl Updater {
         self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.heartbeat_submsg_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .heartbeat_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let participant = state
             .participants
@@ -631,6 +658,12 @@ impl Updater {
         // Update statistics
         state.stat.packet_count += 1;
         state.stat.acknack_submsg_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .acknack_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // Update traffic statistics for associated reader
         let participant = state
@@ -690,6 +723,12 @@ impl Updater {
         self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.ackfrag_submsg_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .ackfrag_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn handle_heartbeatfrag_event(
@@ -701,6 +740,12 @@ impl Updater {
         self.metrics.state_update();
         state.stat.packet_count += 1;
         state.stat.heartbeat_frag_submsg_count += 1;
+        self.lockfree_stats
+            .packet_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.lockfree_stats
+            .heartbeat_frag_submsg_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn handle_participant_info(&self, state: &mut State, info: &ParticipantInfo) {

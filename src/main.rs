@@ -1,5 +1,6 @@
 mod capabilities;
 mod config;
+mod lockfree_state;
 mod logger;
 mod message;
 mod metrics;
@@ -10,6 +11,7 @@ mod otlp;
 mod rtps;
 mod rtps_watcher;
 mod state;
+mod state_adapter;
 mod ui;
 mod updater;
 mod utils;
