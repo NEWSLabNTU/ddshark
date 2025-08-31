@@ -197,7 +197,7 @@ pub struct FragmentedMessage {
 
 impl FragmentedMessage {
     pub fn new(data_size: usize, fragment_size: usize) -> Self {
-        let num_fragments = (data_size + fragment_size - 1) / fragment_size;
+        let num_fragments = data_size.div_ceil(fragment_size);
         Self {
             data_size,
             num_fragments,
@@ -243,7 +243,7 @@ pub struct AckNackState {
 }
 
 /// General traffic statistics.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Statistics {
     pub packet_count: usize,
     pub data_submsg_count: usize,
@@ -252,18 +252,4 @@ pub struct Statistics {
     pub ackfrag_submsg_count: usize,
     pub heartbeat_submsg_count: usize,
     pub heartbeat_frag_submsg_count: usize,
-}
-
-impl Default for Statistics {
-    fn default() -> Self {
-        Self {
-            packet_count: 0,
-            data_submsg_count: 0,
-            datafrag_submsg_count: 0,
-            acknack_submsg_count: 0,
-            ackfrag_submsg_count: 0,
-            heartbeat_submsg_count: 0,
-            heartbeat_frag_submsg_count: 0,
-        }
-    }
 }

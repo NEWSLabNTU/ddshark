@@ -1,11 +1,6 @@
-use crate::metrics::{MetricsCollector, MetricsSnapshot};
+use crate::metrics::MetricsCollector;
 use anyhow::Result;
-use std::{
-    fs::OpenOptions,
-    io::Write,
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::{fs::OpenOptions, io::Write, path::Path, time::Duration};
 use tokio::{task, time::interval};
 use tokio_util::sync::CancellationToken;
 

@@ -1,20 +1,15 @@
 use crate::{config::TICK_INTERVAL, logger::Logger, utils::TimedStat};
 use arc_swap::ArcSwap;
-use chrono::{DateTime, Local};
 use crossbeam_queue::SegQueue;
 use dashmap::DashMap;
-use rbtree_defrag_buffer::DefragBuf;
 use rustdds::{
-    discovery::{DiscoveredReaderData, DiscoveredWriterData},
     structure::{
         guid::{EntityId, GuidPrefix},
         locator::Locator,
     },
-    SequenceNumber, GUID,
+    GUID,
 };
 use std::{
-    collections::{HashMap, HashSet},
-    ops::Range,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
         Arc,
@@ -266,7 +261,4 @@ impl LockFreeState {
 }
 
 // Re-export needed types from the original state module
-pub use crate::state::{
-    AckNackState, FragmentedMessage, HeartbeatState, ReaderState, Statistics, TopicState,
-    WriterState,
-};
+pub use crate::state::{ReaderState, WriterState};

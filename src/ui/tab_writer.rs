@@ -52,9 +52,7 @@ impl WriterTable {
                 } else {
                     frag_messages.len().try_into().unwrap()
                 };
-                let last_sn = last_sn
-                    .map(|sn| sn.0.try_into().unwrap())
-                    .unwrap_or(Value::None);
+                let last_sn = last_sn.map(|sn| sn.0.into()).unwrap_or(Value::None);
 
                 let heartbeat_range = match heartbeat {
                     Some(heartbeat) => {

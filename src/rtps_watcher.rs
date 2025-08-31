@@ -26,7 +26,6 @@ use rustdds::{
         header::Header,
         protocol_version::ProtocolVersion,
         submessages::{
-            elements::serialized_payload::SerializedPayload,
             info_source::InfoSource,
             submessages::{
                 AckNack, Data, DataFrag, Gap, Heartbeat, HeartbeatFrag, InfoDestination,
@@ -45,7 +44,6 @@ use rustdds::{
     },
     RepresentationIdentifier, SequenceNumber, Timestamp, GUID,
 };
-use serde::Deserialize;
 use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},

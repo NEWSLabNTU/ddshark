@@ -1,6 +1,6 @@
 use crate::{
     lockfree_state::{LockFreeState, StatisticsSnapshot},
-    state::{State, Statistics},
+    state::State,
 };
 use std::sync::{Arc, Mutex};
 

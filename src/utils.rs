@@ -14,7 +14,6 @@ pub use guid::*;
 pub use guid_prefix::*;
 pub use locator::*;
 pub use timed_stat::*;
-pub use vec::*;
 
 // pub fn num_base10_digits_usize(val: usize) -> u32 {
 //     val.checked_ilog10().unwrap_or(0) + 1
