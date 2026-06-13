@@ -1,5 +1,4 @@
 use crate::message::RtpsPacketHeaders;
-use anyhow::bail;
 use bytes::Bytes;
 use etherparse::{
     Ethernet2Header, IpHeader, Ipv4Header, PacketHeaders, TransportHeader, UdpHeader, VlanHeader,

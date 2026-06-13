@@ -220,7 +220,7 @@ impl LockFreeState {
     pub fn get_or_create_participant(
         &self,
         guid_prefix: GuidPrefix,
-    ) -> dashmap::mapref::one::Ref<GuidPrefix, LockFreeParticipantState> {
+    ) -> dashmap::mapref::one::Ref<'_, GuidPrefix, LockFreeParticipantState> {
         self.participants.entry(guid_prefix).or_default();
         self.participants.get(&guid_prefix).unwrap()
     }
@@ -229,7 +229,7 @@ impl LockFreeState {
     pub fn get_or_create_topic(
         &self,
         topic_name: String,
-    ) -> dashmap::mapref::one::Ref<String, LockFreeTopicState> {
+    ) -> dashmap::mapref::one::Ref<'_, String, LockFreeTopicState> {
         self.topics.entry(topic_name.clone()).or_default();
         self.topics.get(&topic_name).unwrap()
     }

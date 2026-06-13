@@ -15,7 +15,7 @@ pub struct ParticipantTable {
 impl ParticipantTable {
     pub fn new(state: &State) -> Self {
         let mut participants: Vec<_> = state.participants.iter().collect();
-        participants.sort_unstable_by(|(lprefix, _), (rprefix, _)| lprefix.cmp(rprefix));
+        participants.sort_unstable_by_key(|(lprefix, _)| *lprefix);
 
         let format_locator_list = |locators: Option<&[Locator]>| -> String {
             match locators {

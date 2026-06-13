@@ -13,7 +13,7 @@ pub struct TopicTable {
 impl TopicTable {
     pub fn new(state: &State) -> Self {
         let mut topics: Vec<_> = state.topics.iter().collect();
-        topics.sort_unstable_by(|(lname, _), (rname, _)| lname.cmp(rname));
+        topics.sort_unstable_by_key(|(lname, _)| *lname);
 
         let rows: Vec<_> = topics
             .into_iter()

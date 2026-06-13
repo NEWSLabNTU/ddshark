@@ -24,7 +24,7 @@ impl WriterTable {
                 })
             })
             .collect();
-        writers.sort_unstable_by(|(lid, _), (rid, _)| lid.cmp(rid));
+        writers.sort_unstable_by_key(|(lid, _)| *lid);
 
         let rows: Vec<_> = writers
             .into_iter()

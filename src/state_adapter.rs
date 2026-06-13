@@ -15,6 +15,8 @@ pub struct StateAdapter {
 }
 
 impl StateAdapter {
+    // LockFreeState is not yet Send + Sync; this adapter is unused migration scaffolding.
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn new() -> Self {
         Self {
             lockfree: Arc::new(LockFreeState::new()),
