@@ -1,3 +1,7 @@
+// Much of the lock-free state path, OTLP metrics, and capability helpers are
+// intentionally unused scaffolding for in-progress migrations.
+#![allow(dead_code)]
+
 mod capabilities;
 mod config;
 mod lockfree_state;
