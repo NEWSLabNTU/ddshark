@@ -87,6 +87,23 @@ ddshark reuses RustDDS's wire types (GUID, EntityId, Locator, SequenceNumber, su
 structs, discovery `Discovered*Data`, PL-CDR deserializers) rather than reimplementing RTPS.
 If decode logic needs a type that doesn't exist, check RustDDS before adding it here.
 
+The submodule tracks a fork (`origin` = `https://github.com/jerry73204/RustDDS`) of
+upstream (`upstream` = `https://github.com/Atostek/RustDDS`). The fork carries a small patch
+on top of upstream. To update it (run inside `RustDDS/`):
+
+```sh
+git fetch upstream                       # get latest upstream
+# pick the latest STABLE commit on upstream (a release/tag, not a WIP tip)
+git rebase --onto <upstream-stable-commit> <old-base> <patch-branch>
+# resolve conflicts, then verify it still builds
+cargo build
+git push --force-with-lease origin HEAD  # publish rebased patch to the fork
+```
+
+Then in the ddshark superproject, commit the bumped submodule pointer
+(`git add RustDDS && git commit`). Keep the patch minimal — it should rebase cleanly onto
+upstream stable releases.
+
 ### Utils worth knowing
 `src/utils/` — extension traits and newtypes for RTPS identifiers (`EntityIdExt`, `GuidExt`,
 `GuidPrefixExt`, `LocatorExt`, `EntityKind`) and `TimedStat` (windowed rate stats). Reach for
