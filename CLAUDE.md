@@ -109,6 +109,20 @@ upstream stable releases.
 `GuidPrefixExt`, `LocatorExt`, `EntityKind`) and `TimedStat` (windowed rate stats). Reach for
 these instead of formatting GUIDs/locators by hand.
 
+## Phase docs
+
+Multi-step work (dependency sweeps, migrations, refactors) is planned and tracked in
+`docs/phases/NNN-<kebab-name>.md`, numbered sequentially from `001`. A phase doc has:
+
+- a header with **Status** (planned / in progress / done) and **Started** date,
+- a one-line **Goal** and any **Background** needed to act,
+- **Work items** as `- [ ]` checkboxes, grouped by tier/risk when the work is large,
+- **Acceptance criteria** as `- [ ]` checkboxes (the definition of done),
+- a **Rollback** note.
+
+Tick the boxes as the work lands and flip Status to `done` when every criterion is met.
+Keep the doc the source of truth for in-flight phases; don't duplicate its task list elsewhere.
+
 ## Conventions
 - `config::TICK_INTERVAL` (100 ms) drives the updater's internal tick; `--refresh-rate` (Hz)
   drives the TUI redraw. They are separate clocks — don't conflate them.
