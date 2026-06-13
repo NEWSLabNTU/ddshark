@@ -49,6 +49,19 @@ from a pre-recorded .pcap file.
 ```
 
 
+## Publications
+
+ddshark has been used in the following work:
+
+> Taiyou Kuo\*, Chih-Hao Chang\*, Shih-Hao Hung\*, Wen-Yew Liang†,
+> "Performance Profiling and Online Monitoring on Autonomous Vehicle
+> Systems with Time-Sensitive Networking," IEEE Intelligent Vehicles
+> Symposium (IV), 2026.
+>
+> \* Department of Computer Science and Information Engineering, National
+> Taiwan University, Taipei, Taiwan
+> † Brobridge Inc.
+
 ## License
 
 It is distributed with a MIT license. Please see the [LICENSE](LICENSE) file.
