@@ -1,8 +1,6 @@
 use crate::message::RtpsPacketHeaders;
 use bytes::Bytes;
-use etherparse::{
-    Ethernet2Header, IpHeader, Ipv4Header, PacketHeaders, TransportHeader, UdpHeader, VlanHeader,
-};
+use etherparse::{Ipv4Header, NetHeaders, PacketHeaders, TransportHeader, UdpHeader};
 use libc::timeval;
 use pcap::{PacketCodec, PacketHeader};
 use rustdds::rtps::Message;
@@ -33,24 +31,23 @@ impl PacketDecoder {
             return Dissection::NotSupported;
         };
         let PacketHeaders {
-            link,
-            vlan,
-            ip,
+            net,
             transport,
             payload,
+            ..
         } = headers;
 
-        let Some(IpHeader::Version4(ipv4, _)) = ip else {
+        let Some(NetHeaders::Ipv4(ipv4, _)) = net else {
             return Dissection::NotSupported;
         };
 
-        let is_fragment = ipv4.more_fragments || ipv4.fragments_offset != 0;
+        let is_fragment = ipv4.more_fragments || ipv4.fragment_offset.value() != 0;
 
         let (udp, defrag_payload) = if is_fragment {
-            let payload = match self.process_fragments(&ipv4, payload) {
+            let payload = match self.process_fragments(&ipv4, payload.slice()) {
                 Some(payload) => payload,
                 None => {
-                    return Dissection::Ipv4Fragment { link, vlan, ipv4 };
+                    return Dissection::Ipv4Fragment { ipv4 };
                 }
             };
             let Ok((udp, payload)) = UdpHeader::from_slice(&payload) else {
@@ -61,12 +58,10 @@ impl PacketDecoder {
             let Some(TransportHeader::Udp(udp)) = transport else {
                 return Dissection::NotSupported;
             };
-            (udp, Cow::Borrowed(payload))
+            (udp, Cow::Borrowed(payload.slice()))
         };
 
         MaybeAssembledUdpPacket {
-            link,
-            vlan,
             ipv4,
             udp,
             payload: defrag_payload,
@@ -83,7 +78,7 @@ impl PacketDecoder {
 
         // Store the fragment into the buffer
         let fragment_buffer = self.fragments.entry((src, dst, ident)).or_default();
-        fragment_buffer.insert(ipv4.fragments_offset, payload.to_vec());
+        fragment_buffer.insert(ipv4.fragment_offset.value(), payload.to_vec());
 
         // Update the assembler
         let (received_length, total_length) =
@@ -93,7 +88,7 @@ impl PacketDecoder {
 
         // Update total_length if this is the last fragment
         if !ipv4.more_fragments {
-            let new_total_length = ipv4.fragments_offset as usize + fragment_len;
+            let new_total_length = ipv4.fragment_offset.value() as usize + fragment_len;
             if new_total_length > *total_length {
                 *total_length = new_total_length;
             }
@@ -132,13 +127,7 @@ impl PacketCodec for PacketDecoder {
             Dissection::Ipv4Fragment { .. } => bail!(),
             Dissection::UdpPacket(packet) => packet,
         };
-        let MaybeAssembledUdpPacket {
-            link,
-            vlan,
-            ipv4,
-            udp,
-            payload,
-        } = packet;
+        let MaybeAssembledUdpPacket { ipv4, udp, payload } = packet;
 
         if !payload.starts_with(b"RTPS") {
             bail!();
@@ -155,9 +144,6 @@ impl PacketCodec for PacketDecoder {
 
         RtpsPacket {
             headers: RtpsPacketHeaders {
-                pcap_header: *pcap_packet.header,
-                link,
-                vlan,
                 ipv4,
                 udp,
                 ts: timeval_to_duration(pcap_packet.header.ts),
@@ -214,16 +200,12 @@ enum Dissection<'a> {
     NotSupported,
     #[allow(unused)]
     Ipv4Fragment {
-        link: Option<Ethernet2Header>,
-        vlan: Option<VlanHeader>,
         ipv4: Ipv4Header,
     },
     UdpPacket(MaybeAssembledUdpPacket<'a>),
 }
 
 struct MaybeAssembledUdpPacket<'a> {
-    pub link: Option<Ethernet2Header>,
-    pub vlan: Option<VlanHeader>,
     pub ipv4: Ipv4Header,
     pub udp: UdpHeader,
     pub payload: Cow<'a, [u8]>,

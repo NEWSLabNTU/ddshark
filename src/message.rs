@@ -1,6 +1,6 @@
 //! Messages exchanged within the program.
 
-use etherparse::{Ethernet2Header, Ipv4Header, UdpHeader, VlanHeader};
+use etherparse::{Ipv4Header, UdpHeader};
 use rustdds::{
     discovery::{
         sedp_messages::{DiscoveredReaderData, DiscoveredTopicData, DiscoveredWriterData},
@@ -121,9 +121,6 @@ pub struct RtpsMsgEvent {
 /// The dissected headers from a RTPS packet.
 #[derive(Debug, Clone)]
 pub struct RtpsPacketHeaders {
-    pub pcap_header: pcap::PacketHeader,
-    pub link: Option<Ethernet2Header>,
-    pub vlan: Option<VlanHeader>,
     pub ipv4: Ipv4Header,
     pub udp: UdpHeader,
     pub ts: chrono::Duration,

@@ -25,7 +25,7 @@ use crossterm::{
 };
 use flume::SendTimeoutError;
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
+    backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     prelude::*,
     style::{Color, Style},
@@ -124,10 +124,10 @@ impl Tui {
         Ok(())
     }
 
-    fn run_loop<B>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()>
-    where
-        B: Backend,
-    {
+    fn run_loop(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> io::Result<()> {
         let mut last_tick = Instant::now();
 
         while !self.cancel_token.is_cancelled() {
@@ -227,10 +227,7 @@ impl Tui {
         Ok(ControlFlow::Continue(()))
     }
 
-    fn render<B>(&mut self, frame: &mut Frame<B>)
-    where
-        B: Backend,
-    {
+    fn render(&mut self, frame: &mut Frame) {
         // Unlock the state
         let Ok(state) = self.state.lock() else {
             // TODO: show error
@@ -240,7 +237,7 @@ impl Tui {
         // dbg!(state.participants.len());
 
         // Split the screen vertically into two chunks.
-        let content_height = frame.size().height.saturating_sub(2);
+        let content_height = frame.area().height.saturating_sub(2);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -253,7 +250,7 @@ impl Tui {
                 ]
                 .as_ref(),
             )
-            .split(frame.size());
+            .split(frame.area());
 
         // Build the container for tabs
         let tabs_block = Block::default();
@@ -315,10 +312,7 @@ impl Tui {
         }
     }
 
-    fn render_help_dialog<B>(frame: &mut Frame<B>)
-    where
-        B: Backend,
-    {
+    fn render_help_dialog(frame: &mut Frame) {
         let text = format!(
             "\
             ddshark {}
@@ -342,7 +336,7 @@ q         Close dialog or exit
             env!("CARGO_PKG_VERSION")
         );
 
-        let area = centered_rect(50, 50, frame.size());
+        let area = centered_rect(50, 50, frame.area());
         let block = Block::default()
             .title("Help")
             .borders(Borders::ALL)
@@ -499,10 +493,7 @@ q         Close dialog or exit
         }
     }
 
-    fn render_metrics_panel<B>(frame: &mut Frame<B>, area: Rect, metrics: &MetricsCollector)
-    where
-        B: Backend,
-    {
+    fn render_metrics_panel(frame: &mut Frame, area: Rect, metrics: &MetricsCollector) {
         let snapshot = metrics.snapshot();
 
         // Create vertical layout for different metric categories

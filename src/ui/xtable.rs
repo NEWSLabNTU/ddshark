@@ -147,15 +147,14 @@ impl<'a> StatefulWidget for XTable<'a> {
         }
         state.show.resize(self.header.len(), true);
 
-        let table = Table::new(rows)
+        let table = Table::new(rows, widths)
             .style(Style::default().fg(Color::White))
             .header(header)
             .block(table_block)
-            .widths(&widths)
             .column_spacing(2)
-            .highlight_style(Style::default().fg(Color::Black).bg(Color::White));
+            .row_highlight_style(Style::default().fg(Color::Black).bg(Color::White));
 
-        table.render(area, buf, &mut state.table_state);
+        StatefulWidget::render(table, area, buf, &mut state.table_state);
     }
 }
 

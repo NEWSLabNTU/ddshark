@@ -2,14 +2,17 @@ use crate::{message::RtpsSubmsgEventKind, opts::Opts};
 
 use gethostname::gethostname;
 use mac_address::mac_address_by_name;
-use opentelemetry_api::{global::shutdown_tracer_provider, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::{runtime, trace as sdktrace, trace::Sampler, Resource};
-use opentelemetry_semantic_conventions as semcov;
+use opentelemetry::{trace::TracerProvider as _, KeyValue};
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
+use opentelemetry_sdk::{
+    trace::{Sampler, SdkTracer, SdkTracerProvider},
+    Resource,
+};
 use std::time::{Duration, SystemTime};
 
 pub struct TraceHandle {
-    tracer: sdktrace::Tracer,
+    provider: SdkTracerProvider,
+    tracer: SdkTracer,
     mac_address: [u8; 6],
 }
 
@@ -27,39 +30,33 @@ impl TraceHandle {
             .as_deref()
             .unwrap_or("http://localhost:4317");
 
-        let exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
+        let exporter = SpanExporter::builder()
+            .with_tonic()
             .with_endpoint(endpoint)
-            .with_timeout(Duration::from_secs(2));
+            .with_timeout(Duration::from_secs(2))
+            .build()
+            .expect("failed to build OTLP span exporter");
 
-        let trace_config = sdktrace::config()
+        let resource = Resource::builder()
+            .with_service_name("dds.traffic")
+            .with_attribute(KeyValue::new(
+                "host.name",
+                gethostname().to_string_lossy().to_string(),
+            ))
+            .build();
+
+        let provider = SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
             .with_sampler(Sampler::AlwaysOn)
-            .with_max_events_per_span(64)
-            .with_max_attributes_per_span(16)
-            .with_resource(Resource::new(vec![
-                KeyValue::new(semcov::resource::SERVICE_NAME, "dds.traffic"),
-                KeyValue::new(
-                    semcov::resource::HOST_NAME,
-                    gethostname().to_string_lossy().to_string(),
-                ),
-            ]));
+            .with_resource(resource)
+            .build();
 
-        let batch_config = sdktrace::BatchConfig::default()
-            .with_max_concurrent_exports(4)
-            .with_max_export_batch_size(512)
-            .with_max_queue_size(500000);
-
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(exporter)
-            .with_trace_config(trace_config)
-            .with_batch_config(batch_config)
-            .install_batch(runtime::Tokio)
-            .unwrap();
+        let tracer = provider.tracer("ddshark");
 
         TraceHandle {
-            mac_address,
+            provider,
             tracer,
+            mac_address,
         }
     }
 
@@ -135,7 +132,7 @@ impl TraceHandle {
 
 impl Drop for TraceHandle {
     fn drop(&mut self) {
-        shutdown_tracer_provider();
+        let _ = self.provider.shutdown();
     }
 }
 
