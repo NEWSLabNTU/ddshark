@@ -2,7 +2,7 @@
 
 - **Severity:** 🔴 critical
 - **Area:** memory / IO
-- **Status:** open
+- **Status:** fixed (Phase 004)
 - **Audit:** [001 / A1](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [004](../phases/004-bound-memory-and-backpressure.md)
 

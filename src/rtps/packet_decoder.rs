@@ -8,22 +8,64 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
     net::Ipv4Addr,
+    time::{Duration, Instant},
 };
-use tracing::error;
+use tracing::{error, warn};
+
+/// Drop a partial IP reassembly that has not completed within this window.
+/// (RFC 791 suggests an IP reassembly timeout in the 15–120 s range.)
+const REASSEMBLY_TTL: Duration = Duration::from_secs(30);
+/// Hard cap on concurrent partial reassemblies, to bound memory against a
+/// hostile or churning IP-id space. Oldest are evicted past this.
+const MAX_REASSEMBLIES: usize = 4096;
+
+type FragmentKey = (Ipv4Addr, Ipv4Addr, u16);
+
+/// A partially-received IP datagram being reassembled.
+struct Reassembly {
+    /// Fragments keyed by byte offset.
+    parts: BTreeMap<usize, Vec<u8>>,
+    /// Total datagram length; 0 until the last fragment reveals it.
+    total_length: usize,
+    /// When the first fragment of this datagram was seen (for TTL eviction).
+    first_seen: Instant,
+}
 
 pub struct PacketDecoder {
-    /// Map of (source, destination, ip-id) to fragments keyed by byte offset.
-    fragments: HashMap<(Ipv4Addr, Ipv4Addr, u16), BTreeMap<usize, Vec<u8>>>,
-    /// Map of (source, destination, ip-id) to the known total datagram length.
-    /// 0 until the last fragment (more_fragments = false) reveals the size.
-    assemblers: HashMap<(Ipv4Addr, Ipv4Addr, u16), usize>,
+    /// Map of (source, destination, ip-id) to its in-progress reassembly.
+    reassemblies: HashMap<FragmentKey, Reassembly>,
 }
 
 impl PacketDecoder {
     pub fn new() -> Self {
         PacketDecoder {
-            fragments: HashMap::new(),
-            assemblers: HashMap::new(),
+            reassemblies: HashMap::new(),
+        }
+    }
+
+    /// Drop reassemblies older than the TTL, then enforce the count cap by
+    /// evicting the oldest. Keeps partial-fragment memory bounded (issue 009).
+    fn evict_stale(&mut self, now: Instant) {
+        let before = self.reassemblies.len();
+        self.reassemblies
+            .retain(|_, r| now.duration_since(r.first_seen) <= REASSEMBLY_TTL);
+
+        while self.reassemblies.len() > MAX_REASSEMBLIES {
+            if let Some(oldest) = self
+                .reassemblies
+                .iter()
+                .min_by_key(|(_, r)| r.first_seen)
+                .map(|(k, _)| *k)
+            {
+                self.reassemblies.remove(&oldest);
+            } else {
+                break;
+            }
+        }
+
+        let dropped = before.saturating_sub(self.reassemblies.len());
+        if dropped > 0 {
+            warn!("evicted {dropped} stale/overflowing IP reassembly buffers");
         }
     }
 
@@ -74,6 +116,7 @@ impl PacketDecoder {
     /// Returns None if not all fragments have been received yet, or if the fragments
     /// seen so far do not form a contiguous, non-overlapping range.
     fn process_fragments(&mut self, ipv4: &Ipv4Header, payload: &[u8]) -> Option<Vec<u8>> {
+        let now = Instant::now();
         let key = (
             ipv4.source.into(),
             ipv4.destination.into(),
@@ -84,43 +127,45 @@ impl PacketDecoder {
         let byte_offset = (ipv4.fragment_offset.value() as usize) * 8;
         let fragment_len = payload.len();
 
-        // Store the fragment keyed by its byte offset. Ignore duplicates /
-        // retransmissions so they don't corrupt the contiguity accounting.
-        let fragment_buffer = self.fragments.entry(key).or_default();
-        fragment_buffer
-            .entry(byte_offset)
-            .or_insert_with(|| payload.to_vec());
-
-        // The last fragment (more_fragments = false) reveals the total length.
-        let total_length = self.assemblers.entry(key).or_insert(0);
-        if !ipv4.more_fragments {
-            *total_length = byte_offset + fragment_len;
-        }
-        let total_length = *total_length;
-        if total_length == 0 {
-            // Haven't seen the last fragment yet, so the size is unknown.
-            return None;
+        {
+            let entry = self.reassemblies.entry(key).or_insert_with(|| Reassembly {
+                parts: BTreeMap::new(),
+                total_length: 0,
+                first_seen: now,
+            });
+            // Store the fragment keyed by its byte offset. Ignore duplicates /
+            // retransmissions so they don't corrupt the contiguity accounting.
+            entry
+                .parts
+                .entry(byte_offset)
+                .or_insert_with(|| payload.to_vec());
+            // The last fragment (more_fragments = false) reveals the total length.
+            if !ipv4.more_fragments {
+                entry.total_length = byte_offset + fragment_len;
+            }
         }
 
         // Complete only when fragments cover [0, total_length) with no gap or overlap.
-        let fragment_buffer = &self.fragments[&key];
-        let mut expected = 0usize;
-        for (&offset, data) in fragment_buffer {
-            if offset != expected {
-                // Gap or overlap: not (yet) a clean contiguous datagram.
-                return None;
-            }
-            expected += data.len();
-        }
-        if expected != total_length {
+        let entry = &self.reassemblies[&key];
+        let complete = entry.total_length != 0 && {
+            let mut expected = 0usize;
+            let contiguous = entry.parts.iter().all(|(&offset, data)| {
+                let ok = offset == expected;
+                expected += data.len();
+                ok
+            });
+            contiguous && expected == entry.total_length
+        };
+
+        if !complete {
+            self.evict_stale(now);
             return None;
         }
 
         // Reassemble in offset order.
-        let fragment_buffer = self.fragments.remove(&key).unwrap();
-        self.assemblers.remove(&key);
-        let mut reassembled = Vec::with_capacity(total_length);
-        for (_, fragment) in fragment_buffer {
+        let entry = self.reassemblies.remove(&key).unwrap();
+        let mut reassembled = Vec::with_capacity(entry.total_length);
+        for (_, fragment) in entry.parts {
             reassembled.extend(fragment);
         }
         Some(reassembled)

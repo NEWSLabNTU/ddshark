@@ -14,11 +14,11 @@ watcher drops events after a 100 ms timeout without surfacing it (011).
 
 ## Work items
 ### Eviction (009, 010)
-- [ ] Add first-seen timestamps to IP reassembly entries; periodic sweep evicts stale partials
-- [ ] Cap total buffered IP-fragment bytes
-- [ ] Bound per-writer `frag_messages`; evict oldest incomplete on threshold
-- [ ] Wire a real cleanup tick (revive/replace `state_cleanup.rs`, add it to `main.rs` mod list)
-- [ ] Also bound the append-only `abnormalities` Vec
+- [x] Add first-seen timestamps to IP reassembly entries; evict stale partials past `REASSEMBLY_TTL` (30s)
+- [x] Cap concurrent IP reassemblies (`MAX_REASSEMBLIES = 4096`, oldest evicted)
+- [x] Bound per-writer `frag_messages` (`MAX_FRAG_MESSAGES_PER_WRITER = 1024`, oldest incomplete evicted)
+- [x] Eviction done inline in `PacketDecoder`/updater rather than reviving the orphan `state_cleanup.rs`
+- [ ] Also bound the append-only `abnormalities` Vec — still open
 ### Drop visibility (011)
 - [x] Surface dropped-event count + queue depth in the Statistics tab
 - [x] Persistent red "⚠ DROPPING N events" banner in the tab row (visible on every tab)

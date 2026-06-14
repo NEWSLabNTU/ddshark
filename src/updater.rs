@@ -14,6 +14,7 @@ use crate::{
     opts::Opts,
     otlp,
     state::{Abnormality, AckNackState, FragmentedMessage, HeartbeatState, State},
+    utils::GUIDExt,
 };
 use anyhow::Result;
 use chrono::Local;
@@ -24,6 +25,9 @@ use std::{
 use tokio::{select, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
+
+/// Cap on concurrent in-flight fragmented messages per writer (issue 010).
+const MAX_FRAG_MESSAGES_PER_WRITER: usize = 1024;
 
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
@@ -452,6 +456,27 @@ impl Updater {
         // );
 
         // let topic_name = entity.topic_name().map(|t| t.to_string());
+
+        // Bound the number of in-flight fragmented messages per writer so that
+        // never-completed reassemblies (lossy/hostile traffic) can't grow without
+        // limit (issue 010). Evict the oldest incomplete one before adding a new SN.
+        if !writer.frag_messages.contains_key(&writer_sn)
+            && writer.frag_messages.len() >= MAX_FRAG_MESSAGES_PER_WRITER
+        {
+            if let Some(oldest_sn) = writer
+                .frag_messages
+                .iter()
+                .min_by_key(|(_, m)| m.first_seen)
+                .map(|(sn, _)| *sn)
+            {
+                writer.frag_messages.remove(&oldest_sn);
+                warn!(
+                    "evicted oldest incomplete fragmented message for writer {}",
+                    writer_guid.display()
+                );
+            }
+        }
+
         let frag_msg = writer.frag_messages.entry(writer_sn).or_insert_with(|| {
             FragmentedMessage::new(event.data_size as usize, event.fragment_size as usize)
         });

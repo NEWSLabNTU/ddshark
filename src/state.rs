@@ -193,6 +193,9 @@ pub struct FragmentedMessage {
     /// A range -> payload hash mapping
     pub intervals: HashMap<Range<usize>, u64>,
     pub defrag_buf: DefragBuf,
+    /// When this reassembly started, used to evict the oldest incomplete one
+    /// when a writer accumulates too many in-flight fragmented messages.
+    pub first_seen: Instant,
 }
 
 impl FragmentedMessage {
@@ -204,6 +207,7 @@ impl FragmentedMessage {
             recvd_fragments: 0,
             defrag_buf: DefragBuf::new(num_fragments),
             intervals: HashMap::new(),
+            first_seen: Instant::now(),
         }
     }
 }
