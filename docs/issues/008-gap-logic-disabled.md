@@ -2,7 +2,7 @@
 
 - **Severity:** 🟡 medium (incomplete feature)
 - **Area:** statistics
-- **Status:** open
+- **Status:** open (deferred — feature work)
 - **Audit:** [001 / B4](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [003](../phases/003-fix-traffic-accounting.md)
 

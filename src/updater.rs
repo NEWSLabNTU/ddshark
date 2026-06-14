@@ -569,8 +569,8 @@ impl Updater {
                     if let Some(topic_name) = writer.topic_name() {
                         let topic = state.topics.get_mut(topic_name).unwrap();
 
-                        writer.total_msg_count += 1;
-                        writer.msg_rate_stat.push(msg.recv_time, 1.0);
+                        topic.total_msg_count += 1;
+                        topic.msg_rate_stat.push(msg.recv_time, 1.0);
 
                         topic.total_byte_count += event.payload_size;
                         topic

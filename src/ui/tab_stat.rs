@@ -23,7 +23,9 @@ impl StatTable {
         } = state.stat;
 
         let rows = vec![
-            vec!["packets".into(), format!("{packet_count}").into()],
+            // `packet_count` is incremented once per submessage handler, so it is the
+            // total submessage count, not a packet count (see issue 006).
+            vec!["total submsg".into(), format!("{packet_count}").into()],
             vec!["data submsg".into(), format!("{data_submsg_count}").into()],
             vec![
                 "datafrag submsg".into(),

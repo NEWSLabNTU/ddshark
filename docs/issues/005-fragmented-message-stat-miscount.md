@@ -2,7 +2,7 @@
 
 - **Severity:** 🔴 critical (data correctness)
 - **Area:** statistics
-- **Status:** open
+- **Status:** fixed (Phase 003)
 - **Audit:** [001 / B1](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [003](../phases/003-fix-traffic-accounting.md)
 

@@ -2,7 +2,7 @@
 
 - **Severity:** 🟠 high (misleading metric)
 - **Area:** statistics
-- **Status:** open
+- **Status:** fixed (Phase 003)
 - **Audit:** [001 / B2](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [003](../phases/003-fix-traffic-accounting.md)
 

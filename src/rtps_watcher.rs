@@ -421,8 +421,10 @@ fn handle_submsg_gap(interpreter: &Interpreter, data: &Gap) -> RtpsSubmsgEventKi
     let reader_guid = match interpreter.dst_guid_prefix {
         Some(prefix) => GUID::new(prefix, reader_id),
         None => {
-            warn!("GAP submessage received without destination GUID prefix - using source prefix as fallback");
-            GUID::new(interpreter.src_guid_prefix, reader_id)
+            // No destination prefix: don't fabricate a relationship to the source
+            // participant. Mark the peer UNKNOWN so traffic is counted but not misattributed.
+            warn!("GAP submessage without destination GUID prefix - marking reader prefix UNKNOWN");
+            GUID::new(GuidPrefix::UNKNOWN, reader_id)
         }
     };
 
@@ -449,8 +451,8 @@ fn handle_submsg_nackfrag(interpreter: &Interpreter, data: &NackFrag) -> RtpsSub
     let writer_guid = match interpreter.dst_guid_prefix {
         Some(prefix) => GUID::new(prefix, writer_id),
         None => {
-            warn!("NackFrag submessage received without destination GUID prefix - using source prefix as fallback");
-            GUID::new(interpreter.src_guid_prefix, writer_id)
+            warn!("NackFrag submessage without destination GUID prefix - marking writer prefix UNKNOWN");
+            GUID::new(GuidPrefix::UNKNOWN, writer_id)
         }
     };
     let reader_guid = GUID::new(interpreter.src_guid_prefix, reader_id);
@@ -532,8 +534,8 @@ fn handle_submsg_acknack(interpreter: &Interpreter, data: &AckNack) -> RtpsSubms
     let writer_guid = match interpreter.dst_guid_prefix {
         Some(prefix) => GUID::new(prefix, writer_id),
         None => {
-            warn!("AckNack submessage received without destination GUID prefix - using source prefix as fallback");
-            GUID::new(interpreter.src_guid_prefix, writer_id)
+            warn!("AckNack submessage without destination GUID prefix - marking writer prefix UNKNOWN");
+            GUID::new(GuidPrefix::UNKNOWN, writer_id)
         }
     };
     let reader_guid = GUID::new(interpreter.src_guid_prefix, reader_id);

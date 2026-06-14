@@ -1,6 +1,6 @@
 # Phase 003 — Fix traffic accounting & relationship inference
 
-- **Status:** planned
+- **Status:** in progress
 - **Goal:** make the statistics the tool reports actually correct and the inferred
   reader/writer relationships sound.
 - **Issues:** [005](../issues/005-fragmented-message-stat-miscount.md),
@@ -15,16 +15,16 @@ really a submessage count (006), missing-destination submessages fabricate write
 
 ## Work items
 ### Issue 005 — fragmented stat miscount (highest value, smallest fix)
-- [ ] In `updater.rs:572-573` topic block, use `topic.total_msg_count`/`topic.msg_rate_stat`
-- [ ] Remove the duplicate writer increment so a completed frag msg counts once per writer, once per topic
-- [ ] Add/extend a unit test asserting writer==topic==1 for one completed fragmented sample
+- [x] In `updater.rs` topic block, use `topic.total_msg_count`/`topic.msg_rate_stat`
+- [x] Writer now increments once (line 559); topic once — each completed frag msg counts once per writer, once per topic
+- [ ] Add a unit test asserting writer==topic==1 for one completed fragmented sample — deferred (no test harness for updater yet)
 ### Issue 006 — packet vs submessage count
-- [ ] Decide: relabel field to `submsg_count` (cheap) OR emit+handle per-packet `RtpsMsg`
-- [ ] Update `tab_stat.rs` labels accordingly
+- [x] Relabel the stat display "packets" → "total submsg" (honest to what is counted)
+- [ ] Optional internal field rename `packet_count`→`submsg_count` — deferred (wide mechanical churn, no behavior change)
 ### Issue 007 — attribution fallback
-- [ ] On absent destination prefix, skip relationship attribution (count raw traffic only)
+- [x] On absent destination prefix, attribute the peer to `GuidPrefix::UNKNOWN` (count traffic, no false relationship to the source participant)
 ### Issue 008 — gap application
-- [ ] Implement gap range handling against the writer sequence model
+- [ ] Implement gap range handling against the writer sequence model — deferred (feature, needs sequence-tracking design)
 
 ## Acceptance criteria
 - [ ] Replaying a known capture yields message counts that reconcile writer⇄topic⇄participant
