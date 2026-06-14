@@ -1,6 +1,6 @@
 # Phase 003 — Fix traffic accounting & relationship inference
 
-- **Status:** in progress
+- **Status:** done
 - **Goal:** make the statistics the tool reports actually correct and the inferred
   reader/writer relationships sound.
 - **Issues:** [005](../issues/005-fragmented-message-stat-miscount.md),
@@ -24,7 +24,11 @@ really a submessage count (006), missing-destination submessages fabricate write
 ### Issue 007 — attribution fallback
 - [x] On absent destination prefix, attribute the peer to `GuidPrefix::UNKNOWN` (count traffic, no false relationship to the source participant)
 ### Issue 008 — gap application
-- [ ] Implement gap range handling against the writer sequence model — deferred (feature, needs sequence-tracking design)
+- [x] Bounded gap accounting: count sequence numbers a writer declares irrelevant via GAP
+      ([gap_start, gap_list.base) + set bits) into `WriterState.gapped_sn_count`
+- [x] Surface a `gaps` column in the writer tab
+- [ ] Full per-writer received-vs-expected loss model — out of scope (would need an unbounded
+      observed-sequence set); the gap count is the bounded, useful subset
 
 ## Acceptance criteria
 - [ ] Replaying a known capture yields message counts that reconcile writer⇄topic⇄participant

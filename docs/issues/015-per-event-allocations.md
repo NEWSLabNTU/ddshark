@@ -2,7 +2,7 @@
 
 - **Severity:** 🟡 medium
 - **Area:** CPU / memory pressure
-- **Status:** open (deferred — needs event move-semantics refactor + load measurement)
+- **Status:** fixed (Phase 005)
 - **Audit:** [001 / A7](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [005](../phases/005-reduce-pipeline-contention.md)
 

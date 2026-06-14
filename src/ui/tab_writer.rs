@@ -37,6 +37,7 @@ impl WriterTable {
                     ref bit_rate_stat,
                     ref msg_rate_stat,
                     ref heartbeat,
+                    gapped_sn_count,
                     ..
                 } = *writer;
 
@@ -64,6 +65,12 @@ impl WriterTable {
                     None => Value::None,
                 };
 
+                let gaps = if gapped_sn_count == 0 {
+                    Value::None
+                } else {
+                    gapped_sn_count.try_into().unwrap()
+                };
+
                 vec![
                     guid,
                     last_sn,
@@ -73,6 +80,7 @@ impl WriterTable {
                     avg_bitrate,
                     frag_msg_count,
                     heartbeat_range,
+                    gaps,
                     type_name,
                     topic_name,
                 ]
@@ -97,6 +105,7 @@ impl StatefulWidget for WriterTable {
         const TITLE_BITRATE: &str = "bitrate";
         const TITLE_NUM_FRAGMENTED_MESSAGES: &str = "unfrag_msgs";
         const TITLE_HEARTBEAT: &str = "cached_sn";
+        const TITLE_GAPS: &str = "gaps";
 
         let header = vec![
             TITLE_GUID,
@@ -107,6 +116,7 @@ impl StatefulWidget for WriterTable {
             TITLE_BITRATE,
             TITLE_NUM_FRAGMENTED_MESSAGES,
             TITLE_HEARTBEAT,
+            TITLE_GAPS,
             TITLE_TYPE,
             TITLE_TOPIC,
         ];

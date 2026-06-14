@@ -87,6 +87,9 @@ pub struct WriterState {
     pub bit_rate_stat: TimedStat,
     pub heartbeat: Option<HeartbeatState>,
     pub data: Option<DiscoveredWriterData>,
+    /// Cumulative count of sequence numbers the writer declared irrelevant via
+    /// GAP submessages (so they are not mistaken for loss).
+    pub gapped_sn_count: usize,
 }
 
 impl WriterState {
@@ -114,6 +117,7 @@ impl Default for WriterState {
             msg_rate_stat: TimedStat::new(window),
             bit_rate_stat: TimedStat::new(window),
             data: None,
+            gapped_sn_count: 0,
         }
     }
 }

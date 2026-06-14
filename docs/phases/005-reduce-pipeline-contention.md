@@ -1,6 +1,6 @@
 # Phase 005 — Reduce pipeline contention & raise throughput
 
-- **Status:** in progress (012/013/014 done; 015 deferred)
+- **Status:** done
 - **Goal:** raise sustained event throughput and cut lock contention so the pipeline
   keeps up under load (reduces the drops Phase 004 makes visible).
 - **Issues:** [012](../issues/012-serial-updater-bottleneck.md),
@@ -24,10 +24,11 @@ State lock for whole frames (013); the latency tracker adds an RwLock<Vec> write
 - [x] Sample latency 1-in-`LATENCY_SAMPLE_RATE` (64) so the percentile write lock is off the per-event hot path (vectors already bounded)
 - [ ] Optional: switch to a lock-free atomic histogram — deferred
 ### Allocations (015)
-- [ ] Cut the double `missing_sn` materialization + locator clones — **deferred**: requires an
-      event move-semantics refactor through ~8 handlers (compiler-verifiable but wide) for a
-      marginal, unmeasurable gain. `gap_list` clone feeds the deferred gap feature (008), keep it.
-      Best done together with a load harness.
+- [x] Updater consumes events (owned `UpdateEvent` through `handle_message` and the submsg
+      handlers), so `AckNack.missing_sn` moves into state instead of `.to_vec()` cloning
+- [x] Channel batch drained without per-event borrow churn
+- [ ] Watcher-side locator/gap clones remain (needed to own data crossing the channel /
+      feed the gap feature) — not worth removing
 
 ## Acceptance criteria
 - [ ] Measured sustained throughput improves and induced-congestion drop rate falls vs Phase 004 baseline
