@@ -123,6 +123,12 @@ Multi-step work (dependency sweeps, migrations, refactors) is planned and tracke
 Tick the boxes as the work lands and flip Status to `done` when every criterion is met.
 Keep the doc the source of truth for in-flight phases; don't duplicate its task list elsewhere.
 
+Findings from audits are filed one-per-file in `docs/issues/NNN-<kebab-name>.md` (header
+with Severity/Area/Status, Location with file:line, Problem, Impact, Proposed direction,
+and back-links to the source audit and the addressing phase). A phase doc groups related
+issues into work items; each issue links back to its phase. Audits live in
+`docs/audits/NNN-*.md`; the project map is `docs/architecture.md`.
+
 ## Conventions
 - `config::TICK_INTERVAL` (100 ms) drives the updater's internal tick; `--refresh-rate` (Hz)
   drives the TUI redraw. They are separate clocks — don't conflate them.

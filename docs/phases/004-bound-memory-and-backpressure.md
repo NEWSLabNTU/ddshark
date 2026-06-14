@@ -1,0 +1,33 @@
+# Phase 004 — Bound memory and stop silent drops
+
+- **Status:** planned
+- **Goal:** the monitor must survive long runs and hostile traffic without unbounded
+  memory, and must never lose data silently.
+- **Issues:** [009](../issues/009-ip-defrag-buffer-unbounded.md),
+  [010](../issues/010-rtps-fragmessages-unbounded.md),
+  [011](../issues/011-silent-drop-on-congestion.md)
+
+## Background
+IP-defrag (009) and RTPS-defrag (010) buffers only free on completion → leak on partial
+traffic. Cleanup scaffolding (`state_cleanup.rs`) is not even compiled. On congestion the
+watcher drops events after a 100 ms timeout without surfacing it (011).
+
+## Work items
+### Eviction (009, 010)
+- [ ] Add first-seen timestamps to IP reassembly entries; periodic sweep evicts stale partials
+- [ ] Cap total buffered IP-fragment bytes
+- [ ] Bound per-writer `frag_messages`; evict oldest incomplete on threshold
+- [ ] Wire a real cleanup tick (revive/replace `state_cleanup.rs`, add it to `main.rs` mod list)
+- [ ] Also bound the append-only `abnormalities` Vec
+### Drop visibility (011)
+- [ ] Surface dropped-event count + congestion indicator in the TUI stat tab
+- [ ] Make `--buffer-size` guidance explicit; document the "exact unless drop gauge > 0" guarantee
+
+## Acceptance criteria
+- [ ] Soak test with continuous partial/incomplete fragments shows bounded RSS
+- [ ] Drop counter is visible and non-silent under induced congestion
+- [ ] `state_cleanup` runs on the live path
+- [ ] `just check` + `just test` green
+
+## Rollback
+Eviction and UI changes are separable commits; revert individually.
