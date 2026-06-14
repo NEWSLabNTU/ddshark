@@ -1,5 +1,6 @@
 use super::{value::Value, xtable::XTableState};
 use crate::{
+    metrics::MetricsSnapshot,
     state::{State, Statistics},
     ui::xtable::XTable,
 };
@@ -11,7 +12,7 @@ pub struct StatTable {
 }
 
 impl StatTable {
-    pub fn new(state: &State) -> Self {
+    pub fn new(state: &State, metrics: &MetricsSnapshot) -> Self {
         let Statistics {
             packet_count,
             data_submsg_count,
@@ -46,6 +47,15 @@ impl StatTable {
             vec![
                 "heartbeat_frag submsg".into(),
                 format!("{heartbeat_frag_submsg_count}").into(),
+            ],
+            // Pipeline health: when dropped > 0 the counts above are undercounts.
+            vec![
+                "dropped events".into(),
+                format!("{}", metrics.messages_dropped).into(),
+            ],
+            vec![
+                "queue depth".into(),
+                format!("{} (max {})", metrics.queue_depth, metrics.max_queue_depth).into(),
             ],
         ];
 

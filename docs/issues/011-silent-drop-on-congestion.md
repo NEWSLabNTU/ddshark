@@ -2,7 +2,7 @@
 
 - **Severity:** 🟠 high
 - **Area:** IO / observability correctness
-- **Status:** open
+- **Status:** fixed (drop visibility, Phase 004); backpressure still open
 - **Audit:** [001 / A4](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [004](../phases/004-bound-memory-and-backpressure.md)
 

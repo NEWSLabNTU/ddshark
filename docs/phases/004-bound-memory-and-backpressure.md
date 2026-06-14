@@ -1,6 +1,6 @@
 # Phase 004 — Bound memory and stop silent drops
 
-- **Status:** planned
+- **Status:** in progress (drop visibility done; eviction pending)
 - **Goal:** the monitor must survive long runs and hostile traffic without unbounded
   memory, and must never lose data silently.
 - **Issues:** [009](../issues/009-ip-defrag-buffer-unbounded.md),
@@ -20,8 +20,9 @@ watcher drops events after a 100 ms timeout without surfacing it (011).
 - [ ] Wire a real cleanup tick (revive/replace `state_cleanup.rs`, add it to `main.rs` mod list)
 - [ ] Also bound the append-only `abnormalities` Vec
 ### Drop visibility (011)
-- [ ] Surface dropped-event count + congestion indicator in the TUI stat tab
-- [ ] Make `--buffer-size` guidance explicit; document the "exact unless drop gauge > 0" guarantee
+- [x] Surface dropped-event count + queue depth in the Statistics tab
+- [x] Persistent red "⚠ DROPPING N events" banner in the tab row (visible on every tab)
+- [ ] Make `--buffer-size` guidance explicit; document the "exact unless drop gauge > 0" guarantee — deferred (docs)
 
 ## Acceptance criteria
 - [ ] Soak test with continuous partial/incomplete fragments shows bounded RSS

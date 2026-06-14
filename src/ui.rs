@@ -252,6 +252,16 @@ impl Tui {
             )
             .split(frame.area());
 
+        // Snapshot pipeline metrics so the UI can warn when events are being dropped
+        // (counts on every tab become unreliable once this is non-zero — see issue 011).
+        let metrics_snapshot = self.metrics.snapshot();
+
+        // Split the top row: tabs on the left, a congestion warning on the right.
+        let top = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(1), Constraint::Length(24)].as_ref())
+            .split(chunks[0]);
+
         // Build the container for tabs
         let tabs_block = Block::default();
         let tabs = Tabs::new(TAB_TITLES.to_vec())
@@ -260,7 +270,17 @@ impl Tui {
             .highlight_style(Style::default().fg(Color::Yellow))
             .divider(DOT)
             .select(self.tab_index);
-        frame.render_widget(tabs, chunks[0]);
+        frame.render_widget(tabs, top[0]);
+
+        if metrics_snapshot.messages_dropped > 0 {
+            let warning = Paragraph::new(format!(
+                "⚠ DROPPING {} events",
+                metrics_snapshot.messages_dropped
+            ))
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Right);
+            frame.render_widget(warning, top[1]);
+        }
 
         // Render the tab content according to the current tab index.
         match self.tab_index {
@@ -285,7 +305,11 @@ impl Tui {
                 &mut self.tab_topic,
             ),
             TAB_IDX_STATISTICS => {
-                frame.render_stateful_widget(StatTable::new(&state), chunks[1], &mut self.tab_stat);
+                frame.render_stateful_widget(
+                    StatTable::new(&state, &metrics_snapshot),
+                    chunks[1],
+                    &mut self.tab_stat,
+                );
             }
             TAB_IDX_METRICS => {
                 Self::render_metrics_panel(frame, chunks[1], &self.metrics);
