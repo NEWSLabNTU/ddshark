@@ -2,7 +2,7 @@
 
 - **Severity:** 🟠 high
 - **Area:** CPU / throughput
-- **Status:** open
+- **Status:** fixed (Phase 005)
 - **Audit:** [001 / A3](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [005](../phases/005-reduce-pipeline-contention.md)
 

@@ -7,6 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Record one latency sample per this many events (issue 014).
+const LATENCY_SAMPLE_RATE: u64 = 64;
+
 #[derive(Clone)]
 pub struct MetricsCollector {
     inner: Arc<MetricsInner>,
@@ -151,6 +154,16 @@ impl MetricsCollector {
     }
 
     pub fn record_processing_latency(&self, duration: Duration) {
+        // Only sample 1-in-N to keep the percentile write lock off the per-event
+        // hot path (issue 014); percentiles over thousands of samples stay representative.
+        if !self
+            .inner
+            .messages_processed
+            .load(Ordering::Relaxed)
+            .is_multiple_of(LATENCY_SAMPLE_RATE)
+        {
+            return;
+        }
         let us = duration.as_micros() as u64;
         let mut latencies = self.inner.latencies.write();
         latencies.processing_latencies_us.push(us);
@@ -167,12 +180,16 @@ impl MetricsCollector {
     }
 
     pub fn lock_acquired(&self, wait_time: Duration) {
-        self.inner.lock_acquisitions.fetch_add(1, Ordering::Relaxed);
+        let seq = self.inner.lock_acquisitions.fetch_add(1, Ordering::Relaxed);
         let us = wait_time.as_micros() as u64;
         self.inner
             .lock_wait_time_us
             .fetch_add(us, Ordering::Relaxed);
 
+        // Sample 1-in-N to keep the percentile write lock off the hot path (issue 014).
+        if !seq.is_multiple_of(LATENCY_SAMPLE_RATE) {
+            return;
+        }
         let mut latencies = self.inner.latencies.write();
         latencies.lock_wait_latencies_us.push(us);
 

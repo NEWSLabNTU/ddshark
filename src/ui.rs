@@ -227,15 +227,19 @@ impl Tui {
         Ok(ControlFlow::Continue(()))
     }
 
-    fn render(&mut self, frame: &mut Frame) {
-        // Unlock the state
-        let Ok(state) = self.state.lock() else {
-            // TODO: show error
-            error!("State lock is poisoned");
-            return;
-        };
-        // dbg!(state.participants.len());
+    /// Build something from a short-lived lock on the shared state, so the
+    /// expensive widget draw happens after the lock is released (issue 013).
+    fn with_state<R>(&self, f: impl FnOnce(&State) -> R) -> Option<R> {
+        match self.state.lock() {
+            Ok(state) => Some(f(&state)),
+            Err(_) => {
+                error!("State lock is poisoned");
+                None
+            }
+        }
+    }
 
+    fn render(&mut self, frame: &mut Frame) {
         // Split the screen vertically into two chunks.
         let content_height = frame.area().height.saturating_sub(2);
 
@@ -282,43 +286,48 @@ impl Tui {
             frame.render_widget(warning, top[1]);
         }
 
-        // Render the tab content according to the current tab index.
+        // Render the tab content according to the current tab index. Each table is
+        // built under a brief state lock (with_state), then drawn after release.
         match self.tab_index {
-            TAB_IDX_PARTICIPANT => frame.render_stateful_widget(
-                ParticipantTable::new(&state),
-                chunks[1],
-                &mut self.tab_participant,
-            ),
-            TAB_IDX_WRITER => frame.render_stateful_widget(
-                WriterTable::new(&state),
-                chunks[1],
-                &mut self.tab_writer,
-            ),
-            TAB_IDX_READER => frame.render_stateful_widget(
-                ReaderTable::new(&state),
-                chunks[1],
-                &mut self.tab_reader,
-            ),
-            TAB_IDX_TOPIC => frame.render_stateful_widget(
-                TopicTable::new(&state),
-                chunks[1],
-                &mut self.tab_topic,
-            ),
+            TAB_IDX_PARTICIPANT => {
+                let Some(table) = self.with_state(ParticipantTable::new) else {
+                    return;
+                };
+                frame.render_stateful_widget(table, chunks[1], &mut self.tab_participant);
+            }
+            TAB_IDX_WRITER => {
+                let Some(table) = self.with_state(WriterTable::new) else {
+                    return;
+                };
+                frame.render_stateful_widget(table, chunks[1], &mut self.tab_writer);
+            }
+            TAB_IDX_READER => {
+                let Some(table) = self.with_state(ReaderTable::new) else {
+                    return;
+                };
+                frame.render_stateful_widget(table, chunks[1], &mut self.tab_reader);
+            }
+            TAB_IDX_TOPIC => {
+                let Some(table) = self.with_state(TopicTable::new) else {
+                    return;
+                };
+                frame.render_stateful_widget(table, chunks[1], &mut self.tab_topic);
+            }
             TAB_IDX_STATISTICS => {
-                frame.render_stateful_widget(
-                    StatTable::new(&state, &metrics_snapshot),
-                    chunks[1],
-                    &mut self.tab_stat,
-                );
+                let Some(table) = self.with_state(|s| StatTable::new(s, &metrics_snapshot)) else {
+                    return;
+                };
+                frame.render_stateful_widget(table, chunks[1], &mut self.tab_stat);
             }
             TAB_IDX_METRICS => {
                 Self::render_metrics_panel(frame, chunks[1], &self.metrics);
             }
-            TAB_IDX_ABNORMALITIES => frame.render_stateful_widget(
-                AbnormalityTable::new(&state),
-                chunks[1],
-                &mut self.tab_abnormality,
-            ),
+            TAB_IDX_ABNORMALITIES => {
+                let Some(table) = self.with_state(AbnormalityTable::new) else {
+                    return;
+                };
+                frame.render_stateful_widget(table, chunks[1], &mut self.tab_abnormality);
+            }
             _ => unreachable!(),
         }
 

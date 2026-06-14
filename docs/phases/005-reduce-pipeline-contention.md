@@ -1,6 +1,6 @@
 # Phase 005 — Reduce pipeline contention & raise throughput
 
-- **Status:** planned
+- **Status:** in progress (012/013/014 done; 015 deferred)
 - **Goal:** raise sustained event throughput and cut lock contention so the pipeline
   keeps up under load (reduces the drops Phase 004 makes visible).
 - **Issues:** [012](../issues/012-serial-updater-bottleneck.md),
@@ -16,14 +16,18 @@ State lock for whole frames (013); the latency tracker adds an RwLock<Vec> write
 
 ## Work items
 ### Throughput (012)
-- [ ] Batch-drain the channel and apply N events under one `State` lock (or adopt the lock-free state path)
-- [ ] Measure events/sec before/after via existing metrics
+- [x] Batch-drain the channel (`try_recv` up to `MAX_UPDATE_BATCH = 256`) and apply the batch under one `State` lock; record `batch_processed`
+- [ ] Measure events/sec before/after — pending load harness
 ### TUI contention (013)
-- [ ] Snapshot minimal row data under the lock, release, then render from the snapshot
+- [x] Build each tab's table under a brief `with_state` lock, release, then draw — the ratatui draw no longer blocks the updater
 ### Metrics (014)
-- [ ] Replace unbounded `RwLock<Vec>` latency samples with a bounded estimator (ring/atomic histogram)
+- [x] Sample latency 1-in-`LATENCY_SAMPLE_RATE` (64) so the percentile write lock is off the per-event hot path (vectors already bounded)
+- [ ] Optional: switch to a lock-free atomic histogram — deferred
 ### Allocations (015)
-- [ ] Cut the double `missing_sn` materialization and locator clones; reuse scratch buffers
+- [ ] Cut the double `missing_sn` materialization + locator clones — **deferred**: requires an
+      event move-semantics refactor through ~8 handlers (compiler-verifiable but wide) for a
+      marginal, unmeasurable gain. `gap_list` clone feeds the deferred gap feature (008), keep it.
+      Best done together with a load harness.
 
 ## Acceptance criteria
 - [ ] Measured sustained throughput improves and induced-congestion drop rate falls vs Phase 004 baseline

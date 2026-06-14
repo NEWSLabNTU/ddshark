@@ -29,6 +29,9 @@ use tracing::{debug, error, warn};
 /// Cap on concurrent in-flight fragmented messages per writer (issue 010).
 const MAX_FRAG_MESSAGES_PER_WRITER: usize = 1024;
 
+/// Max events processed under a single state-lock acquisition (issue 012).
+const MAX_UPDATE_BATCH: usize = 256;
+
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
     state: Arc<Mutex<State>>,
@@ -132,24 +135,37 @@ impl Updater {
                 }
             };
 
-            let state = self.state.clone();
+            // Batch the received message with any others already queued so the
+            // state mutex is taken once per batch, not once per event (issue 012).
+            let mut batch = vec![message];
+            while batch.len() < MAX_UPDATE_BATCH {
+                match self.rx.try_recv() {
+                    Ok(message) => batch.push(message),
+                    Err(_) => break,
+                }
+            }
+
+            let state_arc = self.state.clone();
             let lock_start = Instant::now();
-            let Ok(mut state) = state.lock() else {
+            let Ok(mut state) = state_arc.lock() else {
                 error!("INTERNAL ERROR Mutex poision error");
                 break;
             };
             self.metrics.lock_acquired(lock_start.elapsed());
+            self.metrics.batch_processed(batch.len());
 
-            let process_start = Instant::now();
-            match self.handle_message(&mut state, &message) {
-                Ok(()) => {
-                    self.metrics.message_processed();
-                    self.metrics
-                        .record_processing_latency(process_start.elapsed());
-                }
-                Err(e) => {
-                    self.metrics.processing_error();
-                    error!("Error processing message: {}", e);
+            for message in &batch {
+                let process_start = Instant::now();
+                match self.handle_message(&mut state, message) {
+                    Ok(()) => {
+                        self.metrics.message_processed();
+                        self.metrics
+                            .record_processing_latency(process_start.elapsed());
+                    }
+                    Err(e) => {
+                        self.metrics.processing_error();
+                        error!("Error processing message: {}", e);
+                    }
                 }
             }
         }
