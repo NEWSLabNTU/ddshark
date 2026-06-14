@@ -2,7 +2,7 @@
 
 - **Severity:** 🟠 high
 - **Area:** DDS decode / correctness
-- **Status:** open
+- **Status:** fixed (Phase 002)
 - **Audit:** [001 / C2](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [002](../phases/002-harden-decode-path.md)
 

@@ -2,7 +2,7 @@
 
 - **Severity:** 🟡 medium
 - **Area:** decode / correctness
-- **Status:** open
+- **Status:** fixed (Phase 002)
 - **Audit:** [001 / C4](../audits/001-traffic-and-decode-audit.md)
 - **Phase:** [002](../phases/002-harden-decode-path.md)
 

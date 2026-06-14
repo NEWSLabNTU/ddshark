@@ -12,10 +12,11 @@ use std::{
 use tracing::error;
 
 pub struct PacketDecoder {
-    /// Map of (source, destination, id) to (fragment offset, payload)
-    fragments: HashMap<(Ipv4Addr, Ipv4Addr, u16), BTreeMap<u16, Vec<u8>>>,
-    /// Map of (source, destination, id) to (total received length, total length)
-    assemblers: HashMap<(Ipv4Addr, Ipv4Addr, u16), (usize, usize)>,
+    /// Map of (source, destination, ip-id) to fragments keyed by byte offset.
+    fragments: HashMap<(Ipv4Addr, Ipv4Addr, u16), BTreeMap<usize, Vec<u8>>>,
+    /// Map of (source, destination, ip-id) to the known total datagram length.
+    /// 0 until the last fragment (more_fragments = false) reveals the size.
+    assemblers: HashMap<(Ipv4Addr, Ipv4Addr, u16), usize>,
 }
 
 impl PacketDecoder {
@@ -70,42 +71,59 @@ impl PacketDecoder {
     }
 
     /// Process packet fragments and return the payload if it is complete.
-    /// Returns None if not all fragments have been received
+    /// Returns None if not all fragments have been received yet, or if the fragments
+    /// seen so far do not form a contiguous, non-overlapping range.
     fn process_fragments(&mut self, ipv4: &Ipv4Header, payload: &[u8]) -> Option<Vec<u8>> {
-        let src = ipv4.source.into();
-        let dst = ipv4.destination.into();
-        let ident = ipv4.identification;
+        let key = (
+            ipv4.source.into(),
+            ipv4.destination.into(),
+            ipv4.identification,
+        );
 
-        // Store the fragment into the buffer
-        let fragment_buffer = self.fragments.entry((src, dst, ident)).or_default();
-        fragment_buffer.insert(ipv4.fragment_offset.value(), payload.to_vec());
-
-        // Update the assembler
-        let (received_length, total_length) =
-            self.assemblers.entry((src, dst, ident)).or_insert((0, 0));
+        // The IP fragment offset field counts 8-octet units, not bytes.
+        let byte_offset = (ipv4.fragment_offset.value() as usize) * 8;
         let fragment_len = payload.len();
-        *received_length += fragment_len;
 
-        // Update total_length if this is the last fragment
+        // Store the fragment keyed by its byte offset. Ignore duplicates /
+        // retransmissions so they don't corrupt the contiguity accounting.
+        let fragment_buffer = self.fragments.entry(key).or_default();
+        fragment_buffer
+            .entry(byte_offset)
+            .or_insert_with(|| payload.to_vec());
+
+        // The last fragment (more_fragments = false) reveals the total length.
+        let total_length = self.assemblers.entry(key).or_insert(0);
         if !ipv4.more_fragments {
-            let new_total_length = ipv4.fragment_offset.value() as usize + fragment_len;
-            if new_total_length > *total_length {
-                *total_length = new_total_length;
-            }
+            *total_length = byte_offset + fragment_len;
+        }
+        let total_length = *total_length;
+        if total_length == 0 {
+            // Haven't seen the last fragment yet, so the size is unknown.
+            return None;
         }
 
-        // If all fragments have been received, reassemble and return the packet
-        if *received_length == *total_length {
-            let reassembled_fragments = self.fragments.remove(&(src, dst, ident)).unwrap();
-            let mut reassembled = Vec::new();
-            for (_, fragment) in reassembled_fragments {
-                reassembled.extend(fragment);
+        // Complete only when fragments cover [0, total_length) with no gap or overlap.
+        let fragment_buffer = &self.fragments[&key];
+        let mut expected = 0usize;
+        for (&offset, data) in fragment_buffer {
+            if offset != expected {
+                // Gap or overlap: not (yet) a clean contiguous datagram.
+                return None;
             }
-            self.assemblers.remove(&(src, dst, ident));
-            return Some(reassembled);
+            expected += data.len();
+        }
+        if expected != total_length {
+            return None;
         }
 
-        None
+        // Reassemble in offset order.
+        let fragment_buffer = self.fragments.remove(&key).unwrap();
+        self.assemblers.remove(&key);
+        let mut reassembled = Vec::with_capacity(total_length);
+        for (_, fragment) in fragment_buffer {
+            reassembled.extend(fragment);
+        }
+        Some(reassembled)
     }
 }
 

@@ -143,7 +143,11 @@ fn handle_msg(msg: &RtpsPacket) -> Result<Vec<UpdateEvent>> {
             ts: recv_time,
             ..
         } = *headers;
-        assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
+        if guid_prefix == GuidPrefix::UNKNOWN {
+            // Passive sniffing: a packet whose source GUID prefix is UNKNOWN can't be
+            // attributed to a participant. Skip it rather than crash on a crafted packet.
+            return Ok(vec![]);
+        }
 
         let unicast_locator = Locator::UdpV4(SocketAddrV4::new(source.into(), source_port));
 
@@ -222,7 +226,10 @@ fn handle_submsg(interpreter: &mut Interpreter, submsg: &Submessage) -> Vec<Upda
                     guid_prefix,
                     ..
                 } = *info;
-                assert_ne!(guid_prefix, GuidPrefix::UNKNOWN);
+                if guid_prefix == GuidPrefix::UNKNOWN {
+                    // InfoSource with UNKNOWN prefix: ignore rather than crash.
+                    return vec![];
+                }
 
                 *interpreter = Interpreter {
                     src_version: protocol_version,
@@ -556,7 +563,21 @@ where
         error!("no payload found for entity {}", entity_id.display());
         return None;
     };
-    let result = PlCdrDeserializerAdapter::from_bytes(payload, RepresentationIdentifier::PL_CDR_LE);
+    // The serialized payload begins with a 4-byte CDR encapsulation header whose first
+    // two bytes are the representation identifier. Read it instead of assuming LE so
+    // big-endian (PL_CDR_BE) discovery data is decoded correctly; skip unknown encodings.
+    let representation_id = match payload.get(0..2) {
+        Some([0x00, 0x03]) => RepresentationIdentifier::PL_CDR_LE,
+        Some([0x00, 0x02]) => RepresentationIdentifier::PL_CDR_BE,
+        _ => {
+            error!(
+                "unsupported representation identifier in payload for entity {}",
+                entity_id.display()
+            );
+            return None;
+        }
+    };
+    let result = PlCdrDeserializerAdapter::from_bytes(payload, representation_id);
     let data = match result {
         Ok(data) => data,
         Err(err) => {
