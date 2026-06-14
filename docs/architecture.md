@@ -36,6 +36,14 @@ Watcher + updater run on a Tokio multi-thread runtime spawned on a dedicated OS 
 the TUI runs on the main thread. A `CancellationToken` + Ctrl-C handler tears all three
 down together. `--no-tui` drops the channel sender so the pipeline drains and exits.
 
+**Observability guarantee.** Being passive, ddshark cannot apply backpressure to the wire,
+so under sustained overload the bounded channel drops events rather than blocking capture.
+Reported statistics are therefore **exact as long as the "dropped events" gauge is 0**; a
+non-zero gauge (red banner) means counts during that window are undercounts. Raise
+`--buffer-size` to absorb larger bursts. Memory is bounded everywhere it could grow from
+hostile/lossy traffic: IP and RTPS reassembly buffers (TTL + count caps), per-writer
+in-flight fragments, and the abnormality log.
+
 ## Decode path (what ddshark calls in RustDDS)
 
 ddshark does **not** reimplement RTPS — it reuses the vendored RustDDS submodule

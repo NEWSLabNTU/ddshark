@@ -32,6 +32,19 @@ const MAX_FRAG_MESSAGES_PER_WRITER: usize = 1024;
 /// Max events processed under a single state-lock acquisition (issue 012).
 const MAX_UPDATE_BATCH: usize = 256;
 
+/// Cap on the retained abnormality log; oldest entries are dropped past this
+/// so the append-only list can't grow without bound (issue, phase 004).
+const MAX_ABNORMALITIES: usize = 10_000;
+
+/// Append an abnormality, evicting the oldest entries past `MAX_ABNORMALITIES`.
+fn push_abnormality(abnormalities: &mut Vec<Abnormality>, abnormality: Abnormality) {
+    abnormalities.push(abnormality);
+    if abnormalities.len() > MAX_ABNORMALITIES {
+        let excess = abnormalities.len() - MAX_ABNORMALITIES;
+        abnormalities.drain(0..excess);
+    }
+}
+
 pub struct Updater {
     rx: flume::Receiver<UpdateEvent>,
     state: Arc<Mutex<State>>,
@@ -296,13 +309,17 @@ impl Updater {
                             let new_data = &data.publication_topic_data;
 
                             if orig_data.topic_name != new_data.topic_name {
-                                state.abnormalities.push(Abnormality {
-                                    when: Local::now(),
-                                    writer_guid: Some(event.writer_guid),
-                                    reader_guid: None,
-                                    topic_name: None,
-                                    desc: "topic name changed in DiscoveredWriterData".to_string(),
-                                });
+                                push_abnormality(
+                                    &mut state.abnormalities,
+                                    Abnormality {
+                                        when: Local::now(),
+                                        writer_guid: Some(event.writer_guid),
+                                        reader_guid: None,
+                                        topic_name: None,
+                                        desc: "topic name changed in DiscoveredWriterData"
+                                            .to_string(),
+                                    },
+                                );
                             }
                         }
 
@@ -348,13 +365,17 @@ impl Updater {
                             let new_data = &data.subscription_topic_data;
 
                             if orig_data.topic_name() != new_data.topic_name() {
-                                state.abnormalities.push(Abnormality {
-                                    when: Local::now(),
-                                    writer_guid: Some(event.writer_guid),
-                                    reader_guid: None,
-                                    topic_name: None,
-                                    desc: "topic name changed in DiscoveredWriterData".to_string(),
-                                });
+                                push_abnormality(
+                                    &mut state.abnormalities,
+                                    Abnormality {
+                                        when: Local::now(),
+                                        writer_guid: Some(event.writer_guid),
+                                        reader_guid: None,
+                                        topic_name: None,
+                                        desc: "topic name changed in DiscoveredWriterData"
+                                            .to_string(),
+                                    },
+                                );
                             }
                         }
 
@@ -508,13 +529,16 @@ impl Updater {
                 frag_msg.data_size, event.data_size
             );
 
-            state.abnormalities.push(Abnormality {
-                when: Local::now(),
-                writer_guid: Some(writer_guid),
-                reader_guid: None,
-                topic_name: writer.topic_name().map(|t| t.to_string()),
-                desc,
-            });
+            push_abnormality(
+                &mut state.abnormalities,
+                Abnormality {
+                    when: Local::now(),
+                    writer_guid: Some(writer_guid),
+                    reader_guid: None,
+                    topic_name: writer.topic_name().map(|t| t.to_string()),
+                    desc,
+                },
+            );
             return;
         }
 
@@ -560,13 +584,16 @@ impl Updater {
                     // warn!("{err}");
                     // let free_intervals: Vec<_> = defrag_buf.free_intervals().collect();
 
-                    state.abnormalities.push(Abnormality {
-                        when: Local::now(),
-                        writer_guid: Some(writer_guid),
-                        reader_guid: None,
-                        topic_name: writer.topic_name().map(|t| t.to_string()),
-                        desc: format!("unable to insert fragment {range:?} into defrag buffer"),
-                    });
+                    push_abnormality(
+                        &mut state.abnormalities,
+                        Abnormality {
+                            when: Local::now(),
+                            writer_guid: Some(writer_guid),
+                            reader_guid: None,
+                            topic_name: writer.topic_name().map(|t| t.to_string()),
+                            desc: format!("unable to insert fragment {range:?} into defrag buffer"),
+                        },
+                    );
 
                     // println!(
                     //     "defrag {}\t{range:?}\t{topic_name}\t{free_intervals:?}\t!",

@@ -9,7 +9,12 @@ pub struct Opts {
     #[clap(long, default_value = "4")]
     pub refresh_rate: u32,
 
-    /// Size of the message buffer between components.
+    /// Size of the message queue between the capture/decode stage and the updater.
+    ///
+    /// Statistics are exact as long as the "dropped events" gauge stays at 0. Under
+    /// sustained bursts that exceed the updater's rate the queue fills and events are
+    /// dropped (shown as a red banner). Raise this to absorb larger bursts at the cost
+    /// of memory.
     #[clap(long, default_value = "1024")]
     pub buffer_size: usize,
 
