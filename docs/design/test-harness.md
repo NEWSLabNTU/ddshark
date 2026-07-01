@@ -112,14 +112,77 @@ All are minor and align with work already done (the pipeline is already split in
 - Cover variety over time: vanilla pub/sub, fragmented (large sample → DataFrag), multi-topic,
   and a hand-crafted **malformed/hostile** pcap for the robustness assertions.
 
-## CI tiers
+## Test runner: cargo-nextest
 
-1. **Default job (no privileges):** L1 + L2 + L3. `just test`. Must stay green on every push.
-2. **Privileged job (caps/root):** L4 live E2E. Either a dedicated runner with `CAP_NET_RAW`,
-   or `sudo setcap cap_net_raw+ep` on the test binary, or run inside a **network namespace**
-   (`ip netns`) with a `dummy`/`veth` interface and multicast enabled to isolate from host DDS
-   traffic. Marked `#[ignore]` so it only runs when explicitly invoked.
+The harness is configured with **cargo-nextest** via `.config/nextest.toml`, not raw
+`cargo test`. Nextest gives us exactly the primitives the tiers need: **test groups**
+(serialize the live tier — it shares one interface/domain), a **`default-filter`** to keep
+the privileged tier out of a plain run without `#[ignore]`, **per-test overrides** for retries
+and timeouts on the flaky live tests, and named **profiles** for dev/CI/e2e.
+
+Tier ↔ selection:
+- L1/L2/L3 live in binaries with neutral names (`decode_synth`, `replay_pcap`, plus in-crate
+  unit tests). They run on every profile.
+- L4 lives in a binary named `e2e_live`; it's excluded by the default `default-filter` and only
+  runs under the `e2e` profile (or by explicitly overriding the default filter). Its tests share
+  the `e2e` test-group (`max-threads = 1`) so they never run concurrently, and get retries +
+  longer timeouts to absorb discovery races.
+
+`.config/nextest.toml`:
+
+```toml
+# Docs: https://nexte.st/docs/configuration/
+
+[test-groups]
+# Live E2E shares a network interface + DDS domain: never run these in parallel.
+e2e = { max-threads = 1 }
+
+[profile.default]
+# Fast tiers only (L1 unit, L2 synth-bytes, L3 pcap replay). A plain
+# `cargo nextest run` needs no CAP_NET_RAW because e2e_live is filtered out.
+default-filter = 'not binary(e2e_live)'
+fail-fast = false
+slow-timeout = { period = "30s", terminate-after = 2 }
+
+# Live tier: serialize + tolerate discovery races.
+[[profile.default.overrides]]
+filter = 'binary(e2e_live)'
+test-group = 'e2e'
+retries = 2
+slow-timeout = "60s"
+
+# CI: same fast tiers as default, plus machine-readable output.
+[profile.ci]
+inherits = "default"
+[profile.ci.junit]
+path = "junit.xml"
+
+# Privileged CI job: include the live tier (needs CAP_NET_RAW).
+[profile.e2e]
+inherits = "ci"
+default-filter = 'all()'
+```
+
+Commands:
+- `cargo nextest run` — L1 + L2 + L3 (no privileges); this is what `just test` calls.
+- `cargo nextest run --profile ci` — same tiers, emits `junit.xml`.
+- `cargo nextest run --profile e2e` — adds the live tier (run in a `CAP_NET_RAW` job / netns).
+- `cargo nextest run -E 'binary(e2e_live)' --ignore-default-filter` — live tier only, ad hoc.
+
+CI jobs:
+1. **Default job (no privileges):** `cargo nextest run --profile ci`. Green on every push.
+2. **Privileged job:** `cargo nextest run --profile e2e` on a runner with `CAP_NET_RAW`
+   (`setcap cap_net_raw+ep` on the binary, or a **network namespace** with a `dummy`/`veth`
+   interface + multicast to isolate from host DDS). The `e2e` test-group serialization keeps
+   the shared interface conflict-free.
 3. Fixture regeneration is manual/periodic via the recorder, reviewed in PR (binary diff).
+
+Optional: a nextest **setup script** (`experimental = ["setup-scripts"]`) bound to
+`binary(e2e_live)` can create/tear down the netns and export the chosen interface to tests via
+`$NEXTEST_ENV` (e.g. `DDSHARK_TEST_IFACE`), keeping that plumbing out of the test bodies.
+
+`just` recipes: point `test` at `cargo nextest run`, add `test-e2e` → `--profile e2e`. Nextest
+must be installed (`cargo binstall cargo-nextest`); note it in the build docs.
 
 ## Determinism & isolation notes
 
@@ -133,10 +196,12 @@ All are minor and align with work already done (the pipeline is already split in
 
 ## Crates / deps
 
+- Runner: **cargo-nextest** (dev tooling, not a Cargo dep) — see the nextest section.
 - Likely sufficient with std assertions + existing deps (`pcap` for savefile read/write,
   `rustdds` for traffic + message synthesis).
-- Optional niceties: `insta` (snapshot tests for State summaries), `assert_matches`,
-  `serial_test` (serialize the privileged/live tests so they don't share a domain/interface).
+- Optional niceties: `insta` (snapshot tests for State summaries), `assert_matches`.
+  Serialization of the live tests is handled by the nextest `e2e` test-group, so no
+  `serial_test` dependency is needed.
 
 ## Proposed layout
 
