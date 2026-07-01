@@ -38,3 +38,4 @@ crossbeam-queue = "0.3"
 arc-swap = "1.6"
 
 [dev-dependencies]
+clap = { version = "4.6", features = ["derive"] }

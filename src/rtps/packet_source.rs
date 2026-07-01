@@ -16,6 +16,7 @@ pub enum PacketSource {
 }
 
 impl PacketSource {
+    #[allow(clippy::should_implement_trait)]
     pub fn into_iter(self) -> Result<MessageIter> {
         let iter = match self {
             PacketSource::Default => {

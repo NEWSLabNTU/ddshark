@@ -72,13 +72,18 @@ pub async fn rtps_watcher(
     tx: flume::Sender<UpdateEvent>,
     cancel_token: CancellationToken,
     metrics: MetricsCollector,
+    exit_on_eof: bool,
 ) -> Result<()> {
-    let stream = source.into_stream()?;
+    let base = source.into_stream()?;
 
-    // Keep waiting when the packet stream is depleted. This prevents
-    // immediate exit when the stream reaches to the end of .pcap
-    // file.
-    let stream = stream.chain(stream::pending());
+    // When not exiting on EOF, keep waiting after the packet stream is depleted so an
+    // offline `.pcap` doesn't cause an immediate exit (lets the TUI stay up). When
+    // `exit_on_eof` is set, the stream ends at EOF so the pipeline terminates cleanly.
+    let stream = if exit_on_eof {
+        base.boxed()
+    } else {
+        base.chain(stream::pending()).boxed()
+    };
 
     // The stream runs until the cancel_token is signaled.
     let mut stream = stream.take_until(cancel_token.cancelled()).boxed();

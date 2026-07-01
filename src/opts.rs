@@ -38,6 +38,11 @@ pub struct Opts {
     #[clap(long)]
     pub no_tui: bool,
 
+    /// Exit when an offline packet source (`-f`) reaches end of file, instead of
+    /// waiting. Implied for `-f` together with `--no-tui`.
+    #[clap(long)]
+    pub exit_on_eof: bool,
+
     /// Start logging when the program starts.
     #[clap(long)]
     pub log_on_start: bool,

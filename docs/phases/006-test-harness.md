@@ -25,15 +25,14 @@ unlock the higher tiers. Runner is nextest so we get test-groups (serialize the 
 - [ ] Add `cargo-nextest` install note to the build docs (`cargo binstall cargo-nextest`)
 
 ### Seams (enabling refactors)
-- [ ] **Add a `[lib]` target** (or split lib+bin): ddshark is a bin-only crate today, so
-      `tests/` integration binaries can't `use ddshark::…`. L1 works as in-module `#[cfg(test)]`,
-      but L2/L3 need a lib to import `run_pipeline`, `PacketDecoder`, `State`, etc.
-- [ ] Extract a headless `run_pipeline(source, opts, cancel) -> Arc<Mutex<State>>` from `main()`
-- [ ] Terminate the File source on EOF: `--exit-on-eof` (default on for `-f` + `--no-tui`),
-      replacing the unconditional `stream::pending()` chain
-- [ ] `PacketDecoder::decode_bytes(&[u8], ts)` so tests skip `pcap::Packet` construction
-- [ ] Make updater logic reachable: `pub(crate)` handlers or a feed-events method on the pipeline
-- [ ] Small read-only State snapshot/accessors for clean assertions
+- [x] **Added `src/lib.rs` (lib+bin)**: modules are `pub`, `main.rs` is a thin `ddshark::run`.
+      `tests/` can now `use ddshark::…`.
+- [x] Headless `run_pipeline_headless(source, opts) -> HeadlessRun { state, metrics }` in the lib
+- [x] `--exit-on-eof` (default on for `-f` + `--no-tui`); watcher no longer chains
+      `stream::pending()` in that mode, so offline runs terminate
+- [ ] `PacketDecoder::decode_bytes(&[u8], ts)` — still useful for L2 synth without a pcap
+- [x] State assertions go through `run_pipeline_headless` + a pcap, so no separate
+      `pub(crate)` updater seam is needed (State fields are already public)
 
 ### L1 — unit (no refactor) — done, in-module `#[cfg(test)]`
 - [x] `utils/timed_stat.rs`: window eviction, mean-over-window rate
@@ -49,9 +48,10 @@ unlock the higher tiers. Runner is nextest so we get test-groups (serialize the 
       label (006), gap count (008), per-writer frag cap (010)
 
 ### L3 — integration (golden pcap replay)
+- [x] `tests/replay_pcap.rs`: seam-validation — offline pcap → `run_pipeline_headless` returns,
+      terminates (no hang), State inspectable
 - [ ] Record one small `square_basic.pcap` fixture (via L4 recorder) + a hand-made `malformed.pcap`
-- [ ] `tests/replay_pcap.rs`: File source → `run_pipeline` → assert State invariants
-      (topic present, ≥1 writer/reader, data count > 0, writer↔topic association)
+- [ ] Assert real State invariants (topic present, ≥1 writer/reader, data count > 0, association)
 
 ### L4 — E2E live (gated)
 - [ ] `tests/common`: in-process RustDDS publisher (sync `write`) on a unique domain/topic
