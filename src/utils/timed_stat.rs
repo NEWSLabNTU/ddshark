@@ -123,3 +123,37 @@ impl Ord for Entry {
         self.time.cmp(&other.time).reverse()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::TimedStat;
+    use chrono::Duration;
+
+    #[test]
+    fn single_push_mean_is_value_over_window() {
+        let mut ts = TimedStat::new(Duration::seconds(1));
+        ts.push(Duration::seconds(0), 2.0);
+        assert_eq!(ts.stat().sum, 2.0);
+        assert!((ts.stat().mean - 2.0).abs() < 1e-9); // 2.0 / 1s
+    }
+
+    #[test]
+    fn accumulates_within_window() {
+        let mut ts = TimedStat::new(Duration::seconds(10));
+        ts.push(Duration::seconds(0), 1.0);
+        ts.push(Duration::seconds(1), 3.0);
+        assert_eq!(ts.stat().sum, 4.0);
+        assert!((ts.stat().mean - 0.4).abs() < 1e-9); // 4 / 10s
+    }
+
+    #[test]
+    fn evicts_values_outside_window() {
+        let mut ts = TimedStat::new(Duration::seconds(1));
+        ts.push(Duration::seconds(0), 5.0);
+        // last_ts becomes 2s; window lower bound is 1s, so t=0 is evicted.
+        let discarded = ts.push(Duration::seconds(2), 3.0);
+        assert_eq!(discarded, vec![(Duration::seconds(0), 5.0)]);
+        assert_eq!(ts.stat().sum, 3.0);
+        assert!((ts.stat().mean - 3.0).abs() < 1e-9);
+    }
+}

@@ -279,3 +279,65 @@ impl<'a> From<MaybeAssembledUdpPacket<'a>> for Dissection<'a> {
         Self::UdpPacket(v)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PacketDecoder;
+    use etherparse::{IpFragOffset, IpNumber, Ipv4Header};
+
+    /// Build a fragment IPv4 header. `offset_units` is in 8-octet units (as on the wire).
+    fn frag(id: u16, offset_units: u16, more: bool) -> Ipv4Header {
+        let mut h = Ipv4Header::new(0, 64, IpNumber::UDP, [10, 0, 0, 1], [10, 0, 0, 2]).unwrap();
+        h.identification = id;
+        h.more_fragments = more;
+        h.fragment_offset = IpFragOffset::try_new(offset_units).unwrap();
+        h
+    }
+
+    #[test]
+    fn reassembles_two_contiguous_fragments() {
+        let mut d = PacketDecoder::new();
+        // First fragment: offset 0, 8 bytes, more coming.
+        assert_eq!(
+            d.process_fragments(&frag(1, 0, true), &[1, 2, 3, 4, 5, 6, 7, 8]),
+            None
+        );
+        // Last fragment: offset unit 1 = byte 8, 8 bytes, no more.
+        assert_eq!(
+            d.process_fragments(&frag(1, 1, false), &[9, 10, 11, 12, 13, 14, 15, 16]),
+            Some((1u8..=16).collect::<Vec<u8>>())
+        );
+    }
+
+    #[test]
+    fn ignores_duplicate_fragment() {
+        let mut d = PacketDecoder::new();
+        assert_eq!(
+            d.process_fragments(&frag(2, 0, true), &[1, 2, 3, 4, 5, 6, 7, 8]),
+            None
+        );
+        // Duplicate of the first fragment must not corrupt the byte accounting.
+        assert_eq!(
+            d.process_fragments(&frag(2, 0, true), &[1, 2, 3, 4, 5, 6, 7, 8]),
+            None
+        );
+        assert_eq!(
+            d.process_fragments(&frag(2, 1, false), &[9, 10, 11, 12, 13, 14, 15, 16]),
+            Some((1u8..=16).collect::<Vec<u8>>())
+        );
+    }
+
+    #[test]
+    fn gap_between_fragments_never_completes() {
+        let mut d = PacketDecoder::new();
+        assert_eq!(
+            d.process_fragments(&frag(3, 0, true), &[1, 2, 3, 4, 5, 6, 7, 8]),
+            None
+        );
+        // Offset unit 2 = byte 16, leaving a hole at bytes 8..16.
+        assert_eq!(
+            d.process_fragments(&frag(3, 2, false), &[9, 10, 11, 12, 13, 14, 15, 16]),
+            None
+        );
+    }
+}

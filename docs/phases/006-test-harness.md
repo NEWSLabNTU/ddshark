@@ -1,6 +1,6 @@
 # Phase 006 — Test harness (unit → E2E, nextest-driven)
 
-- **Status:** planned
+- **Status:** in progress (runner + L1 done)
 - **Goal:** build the layered test suite from [docs/design/test-harness.md](../design/test-harness.md),
   run by **cargo-nextest**. Most coverage fast, deterministic, and CI-runnable without
   privileges; live real-DDS traffic behind a gated profile.
@@ -16,13 +16,18 @@ unlock the higher tiers. Runner is nextest so we get test-groups (serialize the 
 ## Work items
 
 ### Runner setup
-- [ ] Add `cargo-nextest` to the build docs (`cargo binstall cargo-nextest`)
-- [ ] Add `.config/nextest.toml` with `test-groups.e2e`, `profile.default` (`default-filter =
-      'not binary(e2e_live)'`), the `binary(e2e_live)` override (retries/slow-timeout/e2e group),
-      `profile.ci` (junit), `profile.e2e` (`default-filter = 'all()'`)
-- [ ] Point `just test` at `cargo nextest run`; add `just test-e2e` → `--profile e2e`
+- [x] Add `.config/nextest.toml` with `test-groups.e2e`, `profile.default`
+      (`default-filter = 'not test(~e2e_)'`), the `test(~e2e_)` override
+      (retries/slow-timeout/e2e group), `profile.ci` (junit), `profile.e2e` (`all()`).
+      Note: filter uses `test(~e2e_)` not `binary(e2e_live)` — nextest validates `binary()`
+      against existing binaries, which don't exist until L4 is written.
+- [x] Point `just test` at `cargo nextest run`; add `just test-e2e` → `--profile e2e`
+- [ ] Add `cargo-nextest` install note to the build docs (`cargo binstall cargo-nextest`)
 
 ### Seams (enabling refactors)
+- [ ] **Add a `[lib]` target** (or split lib+bin): ddshark is a bin-only crate today, so
+      `tests/` integration binaries can't `use ddshark::…`. L1 works as in-module `#[cfg(test)]`,
+      but L2/L3 need a lib to import `run_pipeline`, `PacketDecoder`, `State`, etc.
 - [ ] Extract a headless `run_pipeline(source, opts, cancel) -> Arc<Mutex<State>>` from `main()`
 - [ ] Terminate the File source on EOF: `--exit-on-eof` (default on for `-f` + `--no-tui`),
       replacing the unconditional `stream::pending()` chain
@@ -30,11 +35,11 @@ unlock the higher tiers. Runner is nextest so we get test-groups (serialize the 
 - [ ] Make updater logic reachable: `pub(crate)` handlers or a feed-events method on the pipeline
 - [ ] Small read-only State snapshot/accessors for clean assertions
 
-### L1 — unit (no refactor)
-- [ ] `utils/timed_stat.rs`: window eviction, mean/variance, reversed `Entry` ordering
-- [ ] `utils/{guid,guid_prefix,entity_id,entity_kind,locator}.rs`: display incl. UNKNOWN path
-- [ ] `rtps/packet_decoder.rs::process_fragments`: offset units, dedup, overlap, contiguity, TTL/cap
-- [ ] `rtps_watcher.rs::deserialize_payload`: rep-id LE/BE/unknown
+### L1 — unit (no refactor) — done, in-module `#[cfg(test)]`
+- [x] `utils/timed_stat.rs`: window eviction, mean-over-window rate
+- [x] `utils.rs`: displays incl. UNKNOWN prefix/GUID, builtin entity ids, locator, entity kind
+- [x] `rtps/packet_decoder.rs::process_fragments`: contiguous reassembly, dedup, gap-never-completes
+- [x] `rtps_watcher.rs`: rep-id LE/BE/unknown/short (extracted `representation_id_from_payload`)
 
 ### L2 — component (synthesized bytes, no network)
 - [ ] Test helper: build an RTPS `Message` (RustDDS `MessageBuilder`) → bytes → wrap UDP/IP/Eth

@@ -557,6 +557,16 @@ fn handle_submsg_acknack(interpreter: &Interpreter, data: &AckNack) -> RtpsSubms
     .into()
 }
 
+/// Read the PL-CDR representation identifier from the encapsulation header (first two
+/// bytes of a serialized payload). Returns `None` for unsupported/short encodings.
+fn representation_id_from_payload(payload: &[u8]) -> Option<RepresentationIdentifier> {
+    match payload.get(0..2) {
+        Some([0x00, 0x03]) => Some(RepresentationIdentifier::PL_CDR_LE),
+        Some([0x00, 0x02]) => Some(RepresentationIdentifier::PL_CDR_BE),
+        _ => None,
+    }
+}
+
 fn deserialize_payload<T>(entity_id: EntityId, payload: Option<&Bytes>) -> Option<T>
 where
     T: PlCdrDeserialize,
@@ -568,16 +578,12 @@ where
     // The serialized payload begins with a 4-byte CDR encapsulation header whose first
     // two bytes are the representation identifier. Read it instead of assuming LE so
     // big-endian (PL_CDR_BE) discovery data is decoded correctly; skip unknown encodings.
-    let representation_id = match payload.get(0..2) {
-        Some([0x00, 0x03]) => RepresentationIdentifier::PL_CDR_LE,
-        Some([0x00, 0x02]) => RepresentationIdentifier::PL_CDR_BE,
-        _ => {
-            error!(
-                "unsupported representation identifier in payload for entity {}",
-                entity_id.display()
-            );
-            return None;
-        }
+    let Some(representation_id) = representation_id_from_payload(payload) else {
+        error!(
+            "unsupported representation identifier in payload for entity {}",
+            entity_id.display()
+        );
+        return None;
     };
     let result = PlCdrDeserializerAdapter::from_bytes(payload, representation_id);
     let data = match result {
@@ -591,4 +597,30 @@ where
         }
     };
     Some(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::representation_id_from_payload;
+
+    #[test]
+    fn rep_id_little_endian() {
+        assert!(representation_id_from_payload(&[0x00, 0x03, 0x00, 0x00]).is_some());
+    }
+
+    #[test]
+    fn rep_id_big_endian() {
+        assert!(representation_id_from_payload(&[0x00, 0x02, 0x00, 0x00]).is_some());
+    }
+
+    #[test]
+    fn rep_id_unknown_is_none() {
+        assert!(representation_id_from_payload(&[0xff, 0xff]).is_none());
+    }
+
+    #[test]
+    fn rep_id_too_short_is_none() {
+        assert!(representation_id_from_payload(&[0x00]).is_none());
+        assert!(representation_id_from_payload(&[]).is_none());
+    }
 }

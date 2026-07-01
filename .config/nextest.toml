@@ -1,0 +1,34 @@
+# cargo-nextest config for the ddshark test harness.
+# Docs: https://nexte.st/docs/configuration/
+# See docs/phases/006-test-harness.md and docs/design/test-harness.md.
+
+[test-groups]
+# Live E2E tests share a network interface and DDS domain: never run in parallel.
+e2e = { max-threads = 1 }
+
+[profile.default]
+# Fast tiers only (L1 unit, L2 synth-bytes, L3 pcap replay). A plain
+# `cargo nextest run` needs no CAP_NET_RAW because live tests (named `e2e_*`)
+# are filtered out.
+default-filter = 'not test(~e2e_)'
+fail-fast = false
+slow-timeout = { period = "30s", terminate-after = 2 }
+
+# Live tier: serialize + tolerate discovery races.
+[[profile.default.overrides]]
+filter = 'test(~e2e_)'
+test-group = 'e2e'
+retries = 2
+slow-timeout = "60s"
+
+# CI: same fast tiers as default, plus machine-readable output.
+[profile.ci]
+inherits = "default"
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# Privileged CI job: include the live tier (needs CAP_NET_RAW).
+[profile.e2e]
+inherits = "ci"
+default-filter = 'all()'

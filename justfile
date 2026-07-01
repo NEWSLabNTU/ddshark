@@ -6,9 +6,13 @@ default:
 build:
     cargo build --release
 
-# Run the test suite
+# Run the fast test tiers (L1-L3) with nextest; no elevated privileges needed
 test:
-    cargo test
+    cargo nextest run
+
+# Run the live E2E tier too (needs CAP_NET_RAW / a netns runner)
+test-e2e:
+    cargo nextest run --profile e2e
 
 # Format the source code
 format:
